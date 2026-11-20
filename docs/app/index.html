@@ -1,0 +1,736 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lead Agent · Búsqueda de leads</title>
+    <meta
+      name="description"
+      content="Busca, cualifica y guarda leads B2B por sector y ubicación con un agente IA desplegado en AWS."
+    />
+    <style>
+      :root {
+        --bg: #f5f7fa;
+        --panel: #ffffff;
+        --ink: #172033;
+        --muted: #5b6577;
+        --line: #d9dee7;
+        --chip: #eef1f6;
+        --accent: #0f6fde;
+        --accent-ink: #ffffff;
+        --ok: #15803d;
+        --warn: #b45309;
+        --error: #c81e3a;
+        --fit: #0f6fde;
+        --legit: #7c3aed;
+        --contact: #0d9488;
+        --maturity: #d97706;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f141c;
+          --panel: #161d28;
+          --ink: #e6ebf2;
+          --muted: #9aa5b6;
+          --line: #2a3443;
+          --chip: #222b38;
+          --accent: #5aa7ff;
+          --accent-ink: #0f141c;
+          --ok: #4ade80;
+          --warn: #fbbf24;
+          --error: #ff6b7d;
+          --fit: #5aa7ff;
+          --legit: #a78bfa;
+          --contact: #2dd4bf;
+          --maturity: #fbbf24;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          15px/1.5 ui-sans-serif,
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          Arial,
+          sans-serif;
+      }
+      main {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 24px 16px 40px;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 18px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 22px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 18px;
+      }
+      .stack > * + * {
+        margin-top: 14px;
+      }
+      label {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      input {
+        width: 100%;
+        padding: 9px 11px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--bg);
+        color: var(--ink);
+        font: inherit;
+      }
+      input:focus-visible,
+      button:focus-visible,
+      a:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      button {
+        border: 0;
+        border-radius: 8px;
+        padding: 9px 16px;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+        background: var(--accent);
+        color: var(--accent-ink);
+      }
+      button.secondary {
+        background: var(--chip);
+        color: var(--ink);
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: progress;
+      }
+      .login {
+        max-width: 380px;
+        margin: 8vh auto 0;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: 12px;
+        align-items: end;
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 10px;
+      }
+      .chips button {
+        background: var(--chip);
+        color: var(--ink);
+        font-weight: 500;
+        padding: 4px 10px;
+        font-size: 13px;
+      }
+      .tabs {
+        display: inline-flex;
+        background: var(--chip);
+        border-radius: 10px;
+        padding: 3px;
+      }
+      .tabs button {
+        background: transparent;
+        color: var(--ink);
+      }
+      .tabs button[aria-selected='true'] {
+        background: var(--panel);
+        color: var(--accent);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+      }
+      .alert {
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: var(--chip);
+      }
+      .alert.error {
+        color: var(--error);
+      }
+      .steps {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .step {
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: var(--chip);
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .step.done {
+        color: var(--ok);
+      }
+      .step.current {
+        background: var(--accent);
+        color: var(--accent-ink);
+      }
+      .step.failed {
+        background: var(--error);
+        color: #fff;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+      }
+      .stat {
+        background: var(--chip);
+        border-radius: 10px;
+        padding: 10px 12px;
+      }
+      .stat b {
+        display: block;
+        font-size: 20px;
+      }
+      .leads {
+        display: grid;
+        gap: 12px;
+      }
+      .lead {
+        display: grid;
+        grid-template-columns: 1fr 240px;
+        gap: 16px;
+      }
+      .lead h3 {
+        margin: 0;
+        font-size: 16px;
+      }
+      .lead .sub {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .contact {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 14px;
+        font-size: 13px;
+        margin-top: 8px;
+      }
+      .contact .missing {
+        color: var(--muted);
+      }
+      a {
+        color: var(--accent);
+      }
+      .score {
+        font-size: 28px;
+        font-weight: 800;
+        line-height: 1;
+      }
+      .bar {
+        display: flex;
+        height: 10px;
+        border-radius: 5px;
+        overflow: hidden;
+        background: var(--chip);
+        margin: 8px 0 6px;
+      }
+      .legend {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2px 10px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .legend i {
+        display: inline-block;
+        width: 9px;
+        height: 9px;
+        border-radius: 2px;
+        margin-right: 5px;
+      }
+      .reason {
+        font-size: 13px;
+        color: var(--muted);
+        margin-top: 8px;
+      }
+      ul.discarded {
+        margin: 0;
+        padding-left: 18px;
+      }
+      footer {
+        margin-top: 26px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      [hidden] {
+        display: none !important;
+      }
+      @media (max-width: 760px) {
+        .row,
+        .lead {
+          grid-template-columns: 1fr;
+        }
+        .stats {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <!-- Login -->
+      <section id="login-view" class="card login stack" aria-labelledby="login-title">
+        <h1 id="login-title">Lead Agent</h1>
+        <p class="muted">
+          Agente IA que busca, cualifica y guarda leads B2B. Inicia sesión para probarlo.
+        </p>
+        <form id="login-form" class="stack">
+          <div>
+            <label for="username">Usuario</label>
+            <input id="username" autocomplete="username" required />
+          </div>
+          <div>
+            <label for="password">Contraseña</label>
+            <input id="password" type="password" autocomplete="current-password" required />
+          </div>
+          <button type="submit" id="login-button">Ingresar</button>
+          <p id="login-error" class="alert error" role="alert" hidden></p>
+        </form>
+      </section>
+
+      <!-- Aplicación -->
+      <section id="app-view" hidden>
+        <header>
+          <div>
+            <h1>Lead Agent</h1>
+            <span class="muted" id="user-label"></span>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center">
+            <div class="tabs" role="tablist" aria-label="Vistas">
+              <button type="button" role="tab" id="tab-search" aria-selected="true">
+                Nueva búsqueda
+              </button>
+              <button type="button" role="tab" id="tab-leads" aria-selected="false">
+                Todos los leads
+              </button>
+            </div>
+            <button type="button" class="secondary" id="logout">Salir</button>
+          </div>
+        </header>
+
+        <div id="search-view" class="stack">
+          <form id="search-form" class="card">
+            <div class="row">
+              <div>
+                <label for="sector">Sector</label>
+                <input
+                  id="sector"
+                  required
+                  minlength="2"
+                  maxlength="100"
+                  placeholder="Clínicas dentales"
+                />
+              </div>
+              <div>
+                <label for="location">Ubicación</label>
+                <input
+                  id="location"
+                  required
+                  minlength="2"
+                  maxlength="100"
+                  placeholder="Lima, Perú"
+                />
+              </div>
+              <button type="submit" id="search-button">Buscar leads</button>
+            </div>
+            <div class="chips" aria-label="Ejemplos">
+              <button type="button" data-sector="Clínicas dentales" data-location="Lima, Perú">
+                Clínicas dentales · Lima
+              </button>
+              <button type="button" data-sector="Agencias de marketing" data-location="Lima, Perú">
+                Agencias de marketing · Lima
+              </button>
+              <button type="button" data-sector="Estudios contables" data-location="Arequipa, Perú">
+                Estudios contables · Arequipa
+              </button>
+            </div>
+          </form>
+
+          <div id="job-card" class="card stack" hidden aria-live="polite">
+            <div style="display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap">
+              <div class="steps" id="job-steps"></div>
+              <span class="muted" id="job-timer"></span>
+            </div>
+            <p class="muted" id="job-note" style="margin: 0"></p>
+          </div>
+
+          <p id="search-error" class="alert error" role="alert" hidden></p>
+          <div id="results" class="stack" hidden></div>
+        </div>
+
+        <div id="leads-view" class="stack" hidden>
+          <p id="leads-error" class="alert error" role="alert" hidden></p>
+          <div id="all-leads" class="leads"></div>
+        </div>
+
+        <footer>
+          Cada búsqueda la ejecuta un worker en AWS Lambda (API Gateway → SQS → Lambda → DynamoDB)
+          con un LLM vía OpenRouter y búsqueda real en Tavily; tarda entre 30 segundos y unos
+          minutos.
+          <a href="../architecture.html">Arquitectura</a> ·
+          <a href="https://github.com/eduardoalvarado/lead-agent-tool">Repositorio</a>
+        </footer>
+      </section>
+    </main>
+
+    <script>
+      // Configuración pública del despliegue (salidas del stack de CloudFormation): no contiene secretos.
+      const CONFIG = {
+        apiUrl: 'https://tqv3fwknx7.execute-api.us-east-2.amazonaws.com/prod',
+        region: 'us-east-2',
+        clientId: '4l7qdll4fnd0n0lou6c7dli77t',
+      };
+      const POLL_MS = 4000;
+      const STATUS_LABELS = {
+        pending: 'En cola',
+        running: 'Procesando',
+        completed: 'Completado',
+        failed: 'Falló',
+      };
+      const STATUS_ORDER = ['pending', 'running', 'completed'];
+      const CRITERIA = [
+        ['fit', 'Encaje', 35, '--fit'],
+        ['legitimacy', 'Legitimidad', 25, '--legit'],
+        ['contactability', 'Contacto', 25, '--contact'],
+        ['maturity', 'Madurez', 15, '--maturity'],
+      ];
+
+      const $ = (id) => document.getElementById(id);
+      const escapeHtml = (value) =>
+        String(value ?? '').replace(
+          /[&<>"']/g,
+          (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
+        );
+      const show = (el, visible) => (el.hidden = !visible);
+
+      // --- Sesión (sessionStorage: se borra al cerrar la pestaña) ---
+      const session = {
+        get() {
+          try {
+            const raw = sessionStorage.getItem('lead-agent-session');
+            const data = raw ? JSON.parse(raw) : null;
+            return data && data.expiresAt > Date.now() ? data : null;
+          } catch {
+            return null;
+          }
+        },
+        set(data) {
+          try {
+            sessionStorage.setItem('lead-agent-session', JSON.stringify(data));
+          } catch {
+            /* sin almacenamiento: la sesión vive solo en memoria */
+          }
+          memorySession = data;
+        },
+        clear() {
+          try {
+            sessionStorage.removeItem('lead-agent-session');
+          } catch {
+            /* nada que limpiar */
+          }
+          memorySession = null;
+        },
+      };
+      let memorySession = null;
+      const currentSession = () => session.get() ?? memorySession;
+
+      async function login(username, password) {
+        const response = await fetch(`https://cognito-idp.${CONFIG.region}.amazonaws.com/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-amz-json-1.1',
+            'X-Amz-Target': 'AWSCognitoIdentityProviderService.InitiateAuth',
+          },
+          body: JSON.stringify({
+            AuthFlow: 'USER_PASSWORD_AUTH',
+            ClientId: CONFIG.clientId,
+            AuthParameters: { USERNAME: username, PASSWORD: password },
+          }),
+        });
+        const body = await response.json();
+        if (!response.ok || !body.AuthenticationResult) {
+          throw new Error(
+            body.__type?.includes('NotAuthorized')
+              ? 'Usuario o contraseña incorrectos.'
+              : 'No se pudo iniciar sesión.',
+          );
+        }
+        const { IdToken, ExpiresIn } = body.AuthenticationResult;
+        session.set({ token: IdToken, username, expiresAt: Date.now() + (ExpiresIn - 60) * 1000 });
+      }
+
+      async function api(path, options = {}) {
+        const current = currentSession();
+        if (!current) throw new SessionExpired();
+        const response = await fetch(`${CONFIG.apiUrl}${path}`, {
+          ...options,
+          headers: { Authorization: `Bearer ${current.token}`, 'Content-Type': 'application/json' },
+        });
+        if (response.status === 401) throw new SessionExpired();
+        if (response.status === 429)
+          throw new Error('Demasiadas solicitudes: espera unos segundos y reintenta.');
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok)
+          throw new Error(body.message || body.errors || `Error ${response.status}`);
+        return body;
+      }
+      class SessionExpired extends Error {}
+
+      // --- Vistas ---
+      function renderApp() {
+        const current = currentSession();
+        show($('login-view'), !current);
+        show($('app-view'), Boolean(current));
+        if (current) $('user-label').textContent = `Sesión: ${current.username}`;
+      }
+
+      function handleError(error, target) {
+        if (error instanceof SessionExpired) {
+          session.clear();
+          stopPolling();
+          renderApp();
+          $('login-error').textContent = 'La sesión expiró. Vuelve a ingresar.';
+          show($('login-error'), true);
+          return;
+        }
+        target.textContent = error.message;
+        show(target, true);
+      }
+
+      function renderSteps(status) {
+        const failed = status === 'failed';
+        const index = STATUS_ORDER.indexOf(status);
+        $('job-steps').innerHTML = STATUS_ORDER.map((step, i) => {
+          let cls = 'step';
+          if (failed && i === STATUS_ORDER.length - 1)
+            return `<span class="step failed">${STATUS_LABELS.failed}</span>`;
+          if (i < index || status === 'completed') cls += ' done';
+          else if (i === index) cls += ' current';
+          return `<span class="${cls}">${STATUS_LABELS[step]}</span>`;
+        }).join('<span class="muted">→</span>');
+      }
+
+      function contactHtml(contact) {
+        const item = (label, value, href) =>
+          value
+            ? `<span>${label}: ${href ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener">${escapeHtml(value)}</a>` : escapeHtml(value)}</span>`
+            : `<span class="missing">${label}: no publicado</span>`;
+        return `<div class="contact">
+          ${item('Web', contact.website, contact.website)}
+          ${item('Email', contact.email, contact.email ? `mailto:${contact.email}` : null)}
+          ${item('Teléfono', contact.phone)}
+          ${item('Dirección', contact.address)}
+        </div>`;
+      }
+
+      function leadHtml(lead) {
+        const breakdown = lead.qualificationBreakdown;
+        const segments = CRITERIA.map(
+          ([key, , , color]) =>
+            `<span style="width:${breakdown[key]}%;background:var(${color})"></span>`,
+        ).join('');
+        const legend = CRITERIA.map(
+          ([key, label, max, color]) =>
+            `<span><i style="background:var(${color})"></i>${label} ${breakdown[key]}/${max}</span>`,
+        ).join('');
+        return `<article class="card lead">
+          <div>
+            <h3>${escapeHtml(lead.companyName)}</h3>
+            <div class="sub">${escapeHtml(lead.subSector)} · ${escapeHtml(lead.location)} · confianza ${escapeHtml(lead.confidence)}</div>
+            <p style="margin:8px 0 0">${escapeHtml(lead.summary)}</p>
+            ${contactHtml(lead.contact)}
+            <div class="reason">Fuente: <a href="${escapeHtml(lead.sourceUrl)}" target="_blank" rel="noopener">${escapeHtml(lead.sourceUrl)}</a></div>
+          </div>
+          <div>
+            <div class="muted" style="font-size:12px">Puntaje</div>
+            <div class="score">${lead.qualificationScore}<span class="muted" style="font-size:14px">/100</span></div>
+            <div class="bar" role="img" aria-label="Desglose del puntaje">${segments}</div>
+            <div class="legend">${legend}</div>
+          </div>
+        </article>`;
+      }
+
+      function renderResults(job) {
+        const summary = job.summary;
+        const results = $('results');
+        if (!summary) return show(results, false);
+        const leads = [...summary.savedLeads].sort(
+          (a, b) => b.qualificationScore - a.qualificationScore,
+        );
+        const tokens = summary.usage.inputTokens + summary.usage.outputTokens;
+        results.innerHTML = `
+          <div class="stats">
+            <div class="stat"><b>${leads.length}</b>leads guardados</div>
+            <div class="stat"><b>${summary.discarded.length}</b>descartados</div>
+            <div class="stat"><b>${summary.iterations}</b>pasos del agente</div>
+            <div class="stat"><b>${tokens.toLocaleString('es-PE')}</b>tokens</div>
+          </div>
+          ${summary.error ? `<p class="alert error">El LLM falló a mitad de la ejecución: ${escapeHtml(summary.error)}. Se conservan los leads ya guardados.</p>` : ''}
+          <div class="leads">${leads.length ? leads.map(leadHtml).join('') : '<p class="card muted">El agente no encontró leads que cumplan los criterios.</p>'}</div>
+          ${
+            summary.discarded.length
+              ? `<details class="card"><summary><b>Descartados (${summary.discarded.length})</b></summary><ul class="discarded">${summary.discarded
+                  .map(
+                    (d) => `<li><b>${escapeHtml(d.companyName)}</b>: ${escapeHtml(d.reason)}</li>`,
+                  )
+                  .join('')}</ul></details>`
+              : ''
+          }
+          ${summary.finalMessage ? `<details class="card"><summary><b>Resumen del agente</b></summary><p style="white-space:pre-wrap">${escapeHtml(summary.finalMessage)}</p></details>` : ''}`;
+        show(results, true);
+      }
+
+      // --- Búsqueda y seguimiento del job ---
+      let pollTimer = null;
+      let clockTimer = null;
+      function stopPolling() {
+        clearTimeout(pollTimer);
+        clearInterval(clockTimer);
+        $('search-button').disabled = false;
+      }
+
+      async function poll(jobId, startedAt) {
+        try {
+          const job = await api(`/jobs/${encodeURIComponent(jobId)}`);
+          renderSteps(job.status);
+          if (job.status === 'completed' || job.status === 'failed') {
+            stopPolling();
+            $('job-note').textContent =
+              job.status === 'failed'
+                ? `El job falló: ${job.error}`
+                : `Búsqueda completada en ${Math.round((Date.now() - startedAt) / 1000)} s.`;
+            renderResults(job);
+            return;
+          }
+          $('job-note').textContent =
+            job.status === 'pending'
+              ? 'El job está en la cola (SQS).'
+              : 'El agente está buscando, leyendo páginas y cualificando…';
+          pollTimer = setTimeout(() => poll(jobId, startedAt), POLL_MS);
+        } catch (error) {
+          stopPolling();
+          handleError(error, $('search-error'));
+        }
+      }
+
+      $('search-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        stopPolling();
+        show($('search-error'), false);
+        show($('results'), false);
+        $('search-button').disabled = true;
+        try {
+          const accepted = await api('/leads/search', {
+            method: 'POST',
+            body: JSON.stringify({
+              sector: $('sector').value.trim(),
+              location: $('location').value.trim(),
+            }),
+          });
+          const startedAt = Date.now();
+          show($('job-card'), true);
+          renderSteps(accepted.status);
+          $('job-note').textContent = 'Búsqueda aceptada (202). Consultando el estado del job…';
+          clockTimer = setInterval(
+            () => ($('job-timer').textContent = `${Math.round((Date.now() - startedAt) / 1000)} s`),
+            1000,
+          );
+          poll(accepted.jobId, startedAt);
+        } catch (error) {
+          stopPolling();
+          handleError(error, $('search-error'));
+        }
+      });
+
+      document.querySelectorAll('.chips button').forEach((chip) =>
+        chip.addEventListener('click', () => {
+          $('sector').value = chip.dataset.sector;
+          $('location').value = chip.dataset.location;
+        }),
+      );
+
+      // --- Todos los leads ---
+      async function loadAllLeads() {
+        show($('leads-error'), false);
+        $('all-leads').innerHTML = '<p class="muted">Cargando…</p>';
+        try {
+          const leads = await api('/leads');
+          $('all-leads').innerHTML = leads.length
+            ? leads.map(leadHtml).join('')
+            : '<p class="card muted">Aún no hay leads guardados.</p>';
+        } catch (error) {
+          $('all-leads').innerHTML = '';
+          handleError(error, $('leads-error'));
+        }
+      }
+
+      function selectTab(tab) {
+        const isSearch = tab === 'search';
+        $('tab-search').setAttribute('aria-selected', String(isSearch));
+        $('tab-leads').setAttribute('aria-selected', String(!isSearch));
+        show($('search-view'), isSearch);
+        show($('leads-view'), !isSearch);
+        if (!isSearch) loadAllLeads();
+      }
+      $('tab-search').addEventListener('click', () => selectTab('search'));
+      $('tab-leads').addEventListener('click', () => selectTab('leads'));
+
+      // --- Login / logout ---
+      $('login-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        show($('login-error'), false);
+        $('login-button').disabled = true;
+        try {
+          await login($('username').value.trim(), $('password').value);
+          $('password').value = '';
+          renderApp();
+        } catch (error) {
+          $('login-error').textContent = error.message;
+          show($('login-error'), true);
+        } finally {
+          $('login-button').disabled = false;
+        }
+      });
+      $('logout').addEventListener('click', () => {
+        stopPolling();
+        session.clear();
+        renderApp();
+      });
+
+      renderApp();
+    </script>
+  </body>
+</html>
