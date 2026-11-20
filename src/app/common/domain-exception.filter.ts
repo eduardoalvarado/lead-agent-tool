@@ -2,6 +2,7 @@ import { type ArgumentsHost, Catch, type ExceptionFilter, HttpStatus } from '@ne
 import type { Response } from 'express';
 import { DomainError } from '../../core/domain/errors/domain-error.js';
 import { InvalidSearchCriteriaError } from '../../core/domain/errors/invalid-search-criteria.error.js';
+import { JobNotFoundError } from '../../core/domain/errors/job-not-found.error.js';
 import { LlmProviderError } from '../../core/domain/errors/llm-provider.error.js';
 import { PageFetchError } from '../../core/domain/errors/page-fetch.error.js';
 import { PersistenceError } from '../../core/domain/errors/persistence.error.js';
@@ -10,6 +11,7 @@ import { SearchProviderError } from '../../core/domain/errors/search-provider.er
 /** Traducción de errores de dominio a HTTP: el núcleo no conoce códigos de estado. */
 export function httpStatusFor(error: DomainError): HttpStatus {
   if (error instanceof InvalidSearchCriteriaError) return HttpStatus.BAD_REQUEST;
+  if (error instanceof JobNotFoundError) return HttpStatus.NOT_FOUND;
   if (
     error instanceof LlmProviderError ||
     error instanceof SearchProviderError ||

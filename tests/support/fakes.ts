@@ -1,4 +1,8 @@
+import type { Job, JobMessage } from '../../src/core/domain/job.js';
 import type { Lead, LeadCandidate } from '../../src/core/domain/lead.js';
+import type { AgentRunSummary } from '../../src/core/domain/run-summary.js';
+import type { JobQueue } from '../../src/core/ports/job-queue.js';
+import type { JobRepository } from '../../src/core/ports/job-repository.js';
 import type { LeadRepository, SaveLeadResult } from '../../src/core/ports/lead-repository.js';
 import type {
   LLMProvider,
@@ -97,4 +101,49 @@ export function buildCandidate(overrides: Partial<LeadCandidate> = {}): LeadCand
     sourceUrl: 'https://sonrisaclara.pe/',
     ...overrides,
   };
+}
+
+export class FakeJobRepository implements JobRepository {
+  readonly jobs = new Map<string, Job>();
+
+  async create(job: Job): Promise<void> {
+    this.jobs.set(job.jobId, job);
+  }
+
+  async find(jobId: string): Promise<Job | null> {
+    return this.jobs.get(jobId) ?? null;
+  }
+
+  async markRunning(jobId: string, at: Date): Promise<void> {
+    this.patch(jobId, { status: 'running', updatedAt: at.toISOString() });
+  }
+
+  async complete(jobId: string, summary: AgentRunSummary, at: Date): Promise<void> {
+    this.patch(jobId, {
+      status: 'completed',
+      updatedAt: at.toISOString(),
+      summary: {
+        ...summary,
+        savedLeads: [...summary.savedLeads],
+        discarded: [...summary.discarded],
+      },
+    });
+  }
+
+  async fail(jobId: string, error: string, at: Date): Promise<void> {
+    this.patch(jobId, { status: 'failed', updatedAt: at.toISOString(), error });
+  }
+
+  private patch(jobId: string, fields: Partial<Job>): void {
+    const job = this.jobs.get(jobId);
+    if (job) this.jobs.set(jobId, { ...job, ...fields });
+  }
+}
+
+export class FakeJobQueue implements JobQueue {
+  readonly messages: JobMessage[] = [];
+
+  async enqueue(message: JobMessage): Promise<void> {
+    this.messages.push(message);
+  }
 }

@@ -4,7 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import type { SearchLeadsUseCase } from '../core/application/search-leads.use-case.js';
 import { DomainError } from '../core/domain/errors/domain-error.js';
 import { AppModule } from './app.module.js';
-import { loadDotEnvIfPresent } from './config/app-config.js';
+import { prepareEnvironment } from './config/app-config.js';
 import { SEARCH_LEADS_USE_CASE } from './providers/tokens.js';
 
 // CLI: mismo caso de uso que HTTP y Lambda, sin servidor (createApplicationContext).
@@ -16,7 +16,7 @@ const { values } = parseArgs({
   },
 });
 
-loadDotEnvIfPresent();
+await prepareEnvironment();
 const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
 try {
   const summary = await app

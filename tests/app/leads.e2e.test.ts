@@ -4,7 +4,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { AppModule } from '../../src/app/app.module.js';
 import { DomainExceptionFilter } from '../../src/app/common/domain-exception.filter.js';
 import { loadAppConfig } from '../../src/app/config/app-config.js';
-import { APP_CONFIG, LEAD_REPOSITORY, LLM_PROVIDER } from '../../src/app/providers/tokens.js';
+import {
+  APP_CONFIG,
+  JOB_QUEUE,
+  JOB_REPOSITORY,
+  LEAD_REPOSITORY,
+  LLM_PROVIDER,
+} from '../../src/app/providers/tokens.js';
 import { PersistenceError } from '../../src/core/domain/errors/persistence.error.js';
 import { LlmProviderError } from '../../src/core/domain/errors/llm-provider.error.js';
 import type { LeadRepository } from '../../src/core/ports/lead-repository.js';
@@ -13,6 +19,8 @@ import {
   answer,
   buildCandidate,
   callTools,
+  FakeJobQueue,
+  FakeJobRepository,
   FakeLeadRepository,
   ScriptedLlm,
   toolCall,
@@ -123,5 +131,52 @@ describe('LeadsController (e2e)', () => {
 
     expect(response.status).toBe(503);
     expect(await response.json()).toMatchObject({ code: 'PERSISTENCE_ERROR' });
+  });
+});
+
+describe('Flujo asíncrono (EXECUTION_MODE=async, e2e)', () => {
+  afterEach(async () => {
+    await app?.close();
+    app = undefined;
+  });
+
+  it('POST /leads/search responde 202 con el jobId y GET /jobs/{id} devuelve el job', async () => {
+    const jobs = new FakeJobRepository();
+    const queue = new FakeJobQueue();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(APP_CONFIG)
+      .useValue(
+        loadAppConfig({
+          LLM_API_KEY: 'test',
+          EXECUTION_MODE: 'async',
+          JOBS_QUEUE_URL: 'https://sqs.us-east-2.amazonaws.com/0/jobs',
+          LOG_LEVEL: 'error',
+        }),
+      )
+      .overrideProvider(JOB_REPOSITORY)
+      .useValue(jobs)
+      .overrideProvider(JOB_QUEUE)
+      .useValue(queue)
+      .compile();
+    app = moduleRef.createNestApplication({ logger: false });
+    app.useGlobalFilters(new DomainExceptionFilter());
+    await app.listen(0);
+    const baseUrl = await app.getUrl();
+
+    const accepted = await postSearch(baseUrl, {
+      sector: 'Clínicas dentales',
+      location: 'Lima, Perú',
+    });
+    const body = (await accepted.json()) as { jobId: string; statusUrl: string };
+    const status = await fetch(`${baseUrl}${body.statusUrl}`);
+    const missing = await fetch(`${baseUrl}/jobs/no-existe`);
+
+    expect(accepted.status).toBe(202);
+    expect(queue.messages).toEqual([
+      { jobId: body.jobId, criteria: { sector: 'Clínicas dentales', location: 'Lima, Perú' } },
+    ]);
+    expect(status.status).toBe(200);
+    expect(await status.json()).toMatchObject({ jobId: body.jobId, status: 'pending' });
+    expect(missing.status).toBe(404);
   });
 });

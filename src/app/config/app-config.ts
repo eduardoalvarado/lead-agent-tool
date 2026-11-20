@@ -1,4 +1,7 @@
 import { z } from 'zod';
+import { loadSecretIntoEnv } from '../../infrastructure/secrets/secrets-manager-env.js';
+
+const DEFAULT_AWS_REGION = 'us-east-2';
 
 export const LLM_PROVIDERS = ['groq', 'ollama', 'openai-compatible', 'bedrock'] as const;
 
@@ -36,6 +39,14 @@ export const AppConfigSchema = z
     DYNAMO_ENDPOINT: z.string().optional(),
     DYNAMO_TABLE: z.string().min(1).default('leads'),
 
+    // sync (local): POST /leads/search ejecuta el agente y responde el resumen.
+    // async (AWS): registra un job, lo encola en SQS y responde 202; un worker lo procesa.
+    EXECUTION_MODE: z.enum(['sync', 'async']).default('sync'),
+    JOBS_TABLE: z.string().min(1).default('jobs'),
+    JOBS_QUEUE_URL: z.url().optional(),
+    // Orígenes permitidos para CORS (separados por coma), p. ej. el frontend en GitHub Pages.
+    CORS_ORIGINS: z.string().optional(),
+
     AGENT_MAX_ITERATIONS: positiveInt(20),
     AGENT_MAX_LEADS: positiveInt(10),
   })
@@ -50,6 +61,10 @@ export const AppConfigSchema = z
       path: ['LLM_BASE_URL'],
     },
   )
+  .refine((env) => env.EXECUTION_MODE !== 'async' || Boolean(env.JOBS_QUEUE_URL), {
+    message: 'JOBS_QUEUE_URL es obligatoria con EXECUTION_MODE=async',
+    path: ['JOBS_QUEUE_URL'],
+  })
   .refine((env) => env.SEARCH_PROVIDER !== 'tavily' || Boolean(env.TAVILY_API_KEY), {
     message: 'TAVILY_API_KEY es obligatoria con SEARCH_PROVIDER=tavily',
     path: ['TAVILY_API_KEY'],
@@ -73,5 +88,17 @@ export function loadDotEnvIfPresent(): void {
     process.loadEnvFile();
   } catch {
     // Sin archivo .env: se usan solo las variables del entorno.
+  }
+}
+
+/**
+ * Prepara el entorno antes de levantar Nest: `.env` en local y, si `SECRETS_ID` está definida
+ * (AWS), las API keys desde Secrets Manager.
+ */
+export async function prepareEnvironment(): Promise<void> {
+  loadDotEnvIfPresent();
+  const secretId = process.env.SECRETS_ID;
+  if (secretId) {
+    await loadSecretIntoEnv(secretId, process.env.AWS_REGION ?? DEFAULT_AWS_REGION);
   }
 }
