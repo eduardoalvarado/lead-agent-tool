@@ -230,20 +230,18 @@ Las variables pasadas en la línea de comandos tienen prioridad sobre el `.env`.
 |---|---|---|
 | `PORT` | Puerto HTTP | `3000` |
 | `LOG_LEVEL` | `debug` \| `info` \| `warn` \| `error` | `info` |
-| `LLM_PROVIDER` | `groq` \| `ollama` \| `openai-compatible` \| `bedrock` | `groq` |
+| `LLM_PROVIDER` | `groq` \| `ollama` \| `openai-compatible` \| `bedrock`. Presets: `groq` (`https://api.groq.com/openai/v1`, `openai/gpt-oss-120b`) · `ollama` (`http://localhost:11434/v1`, `qwen3:8b`) · `openai-compatible` (sin defaults) | `groq` |
 | `LLM_TIMEOUT_MS` / `LLM_MAX_RETRIES` | Timeout y reintentos por llamada al LLM | `60000` / `2` |
-| `LLM_PROVIDER` presets | `groq` (`https://api.groq.com/openai/v1`, `openai/gpt-oss-120b`) · `ollama` (`http://localhost:11434/v1`, `qwen3:8b`) · `openai-compatible` (sin defaults) | — |
 | `LLM_API_KEY` / `LLM_MODEL` / `LLM_BASE_URL` | Key, modelo y URL del proveedor compatible con OpenAI; sobrescriben los defaults del preset. Key obligatoria con `groq` y `openai-compatible`; URL y modelo obligatorios con `openai-compatible` | — |
 | `LLM_REASONING_EFFORT` | `low` \| `medium` \| `high`: esfuerzo de razonamiento en modelos que lo admiten (menos esfuerzo = menos tokens) | `low` con `groq` |
 | `LLM_TEMPERATURE` | Temperatura (0–2). Vacía: la del preset (`groq`/`ollama`: 0) o no se envía (`openai-compatible`); dejarla vacía con modelos que la rechazan, como Claude | `0` con `groq`/`ollama` |
-| `AWS_REGION` | Región de Bedrock y DynamoDB | `us-east-2` |
+| `AWS_REGION` | Región de los servicios de AWS (Bedrock, DynamoDB, SQS, Secrets Manager) | `us-east-2` |
 | `BEDROCK_MODEL` / `BEDROCK_EFFORT` / `BEDROCK_MAX_TOKENS` | Modelo de Claude en Bedrock, esfuerzo y tokens máximos | `anthropic.claude-haiku-5-5` / `medium` / `16000` |
 | `SEARCH_PROVIDER` | `tavily` \| `mock` | `mock` |
 | `TAVILY_API_KEY` | Key de Tavily (obligatoria con `tavily`) | — |
 | `HTTP_TIMEOUT_MS` | Timeout de Tavily y de la lectura de páginas | `10000` |
 | `DYNAMO_ENDPOINT` / `DYNAMO_TABLE` | Endpoint de DynamoDB Local (vacío en AWS) y tabla | `http://localhost:8000` / `leads` |
 | `AGENT_MAX_ITERATIONS` / `AGENT_MAX_LEADS` | Límites del agente por ejecución | `20` / `10` |
-
 | `EXECUTION_MODE` | `sync` (local: responde el resumen) \| `async` (AWS: 202 + jobId, worker por SQS) | `sync` |
 | `JOBS_TABLE` / `JOBS_QUEUE_URL` | Tabla de jobs y URL de la cola SQS (obligatoria con `async`) | `jobs` / — |
 | `CORS_ORIGINS` | Orígenes permitidos (separados por coma), p. ej. el frontend | — |
