@@ -599,6 +599,7 @@
             <div class="stat"><b>${tokens.toLocaleString('es-PE')}</b>tokens</div>
           </div>
           ${summary.error ? `<p class="alert error">El LLM falló a mitad de la ejecución: ${escapeHtml(summary.error)}. Se conservan los leads ya guardados.</p>` : ''}
+          ${summary.stopReason === 'time_limit' ? '<p class="alert error">Se agotó el tiempo máximo de ejecución del agente. Se conservan los leads ya guardados.</p>' : ''}
           <div class="leads">${leads.length ? leads.map(leadHtml).join('') : '<p class="card muted">El agente no encontró leads que cumplan los criterios.</p>'}</div>
           ${
             summary.discarded.length

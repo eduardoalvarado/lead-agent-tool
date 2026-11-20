@@ -1,10 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { STOP_REASONS } from '../../../core/domain/run-summary.js';
 import { DiscardedCandidateDto } from './discarded-candidate.dto.js';
 import { LeadDto } from './lead.dto.js';
 import { RunUsageDto } from './run-usage.dto.js';
 import { SearchLeadsRequestDto } from './search-leads-request.dto.js';
-
-const STOP_REASONS = ['completed', 'max_iterations', 'max_leads', 'llm_error'];
 
 export class RunSummaryDto {
   @ApiProperty({ format: 'uuid' })
@@ -22,7 +21,7 @@ export class RunSummaryDto {
   @ApiProperty({ example: 7 })
   iterations!: number;
 
-  @ApiProperty({ enum: STOP_REASONS, example: 'completed' })
+  @ApiProperty({ enum: [...STOP_REASONS], example: 'completed' })
   stopReason!: string;
 
   @ApiProperty({ type: String, nullable: true, description: 'Resumen final del agente' })

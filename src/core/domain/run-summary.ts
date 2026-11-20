@@ -1,8 +1,18 @@
 import type { Lead } from './lead.js';
 import type { SearchCriteria } from './search-criteria.js';
 
-/** Por qué terminó el agente: por decisión propia o por una guarda. */
-export type StopReason = 'completed' | 'max_iterations' | 'max_leads' | 'llm_error';
+/**
+ * Por qué terminó el agente: por decisión propia (`completed`), por una guarda (iteraciones,
+ * leads o plazo de ejecución) o por un fallo del LLM.
+ */
+export const STOP_REASONS = [
+  'completed',
+  'max_iterations',
+  'max_leads',
+  'time_limit',
+  'llm_error',
+] as const;
+export type StopReason = (typeof STOP_REASONS)[number];
 
 export interface DiscardedCandidate {
   readonly companyName: string;

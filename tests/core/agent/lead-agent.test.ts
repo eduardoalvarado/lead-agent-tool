@@ -258,6 +258,40 @@ describe('LeadAgent', () => {
     expect(llm.requests).toHaveLength(2);
   });
 
+  it('con el plazo vencido no llama al LLM y termina por time_limit', async () => {
+    const { agent, llm } = setup([answer('No debería llegar aquí.')]);
+
+    const summary = await agent.run(criteria, 'job-1', AbortSignal.abort());
+
+    expect(summary).toMatchObject({ stopReason: 'time_limit', iterations: 0 });
+    expect(llm.requests).toHaveLength(0);
+  });
+
+  it('si el plazo vence durante un tool, no ejecuta los siguientes y conserva lo avanzado', async () => {
+    const deadline = new AbortController();
+    const slowSearch: SearchProvider = {
+      search: async () => {
+        deadline.abort();
+        return [];
+      },
+    };
+    const { agent, repository } = setup(
+      [
+        callTools(
+          toolCall('search_web', { query: 'dentistas Lima' }, 'c1'),
+          toolCall('save_lead', buildCandidate(), 'c2'),
+        ),
+      ],
+      { maxIterations: 10, maxLeads: 10 },
+      slowSearch,
+    );
+
+    const summary = await agent.run(criteria, 'job-1', deadline.signal);
+
+    expect(summary).toMatchObject({ stopReason: 'time_limit', iterations: 1 });
+    expect(repository.saved).toHaveLength(0);
+  });
+
   it('se detiene al alcanzar el máximo de leads, sin ejecutar más tools', async () => {
     const second = buildCandidate({
       companyName: 'Dentalia',

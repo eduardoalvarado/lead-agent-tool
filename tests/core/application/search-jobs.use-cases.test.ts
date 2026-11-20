@@ -206,14 +206,44 @@ describe('ProcessSearchJobUseCase', () => {
     expect(llm.requests).toHaveLength(0);
   });
 
-  it('propaga errores inesperados para que la cola reintente', async () => {
+  const buggy: LLMProvider = {
+    complete: async () => {
+      throw new TypeError('bug');
+    },
+  };
+
+  it('propaga errores inesperados y deja el job en running mientras queden reintentos', async () => {
     const jobs = new FakeJobRepository();
     await pendingJob(jobs);
-    const buggy: LLMProvider = {
-      complete: async () => {
-        throw new TypeError('bug');
-      },
-    };
+
+    await expect(
+      new ProcessSearchJobUseCase(agentWith(buggy), jobs, fixedClock, new SilentLogger()).execute(
+        { jobId: 'job-1', criteria },
+        { finalAttempt: false },
+      ),
+    ).rejects.toThrow(TypeError);
+    expect((await jobs.find('job-1'))?.status).toBe('running');
+  });
+
+  it('en el último intento marca el job failed sin exponer el detalle y propaga el error (DLQ)', async () => {
+    const jobs = new FakeJobRepository();
+    await pendingJob(jobs);
+
+    await expect(
+      new ProcessSearchJobUseCase(agentWith(buggy), jobs, fixedClock, new SilentLogger()).execute(
+        { jobId: 'job-1', criteria },
+        { finalAttempt: true },
+      ),
+    ).rejects.toThrow(TypeError);
+    const job = await jobs.find('job-1');
+    expect(job?.status).toBe('failed');
+    expect(job?.error).toContain('agotar los reintentos');
+    expect(job?.error).not.toContain('bug');
+  });
+
+  it('sin contexto de la cola asume un único intento y no deja el job en running', async () => {
+    const jobs = new FakeJobRepository();
+    await pendingJob(jobs);
 
     await expect(
       new ProcessSearchJobUseCase(agentWith(buggy), jobs, fixedClock, new SilentLogger()).execute({
@@ -221,6 +251,24 @@ describe('ProcessSearchJobUseCase', () => {
         criteria,
       }),
     ).rejects.toThrow(TypeError);
+    expect((await jobs.find('job-1'))?.status).toBe('failed');
+  });
+
+  it('pasa el plazo al agente: vencido, el job se completa con time_limit', async () => {
+    const jobs = new FakeJobRepository();
+    await pendingJob(jobs);
+    const llm = new ScriptedLlm([answer('No debería llegar aquí.')]);
+
+    const result = await new ProcessSearchJobUseCase(
+      agentWith(llm),
+      jobs,
+      fixedClock,
+      new SilentLogger(),
+    ).execute({ jobId: 'job-1', criteria }, { finalAttempt: false, deadline: AbortSignal.abort() });
+
+    expect(result).toBe('completed');
+    expect((await jobs.find('job-1'))?.summary?.stopReason).toBe('time_limit');
+    expect(llm.requests).toHaveLength(0);
   });
 });
 

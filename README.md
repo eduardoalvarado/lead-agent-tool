@@ -93,6 +93,7 @@ Keys de LLM y Tavily en Secrets Manager · roles IAM por Lambda · CloudWatch Lo
 ```
 
 - **Por qué asíncrono:** una ejecución del agente tarda minutos y API Gateway corta a los 29 s. La API responde `202` con `jobId` y el cliente consulta el estado (la app web lo hace cada 4 s).
+- **Ningún job queda en `running` para siempre:** un fallo del LLM o de un servicio externo cierra el job sin reintentar (`completed` con `stopReason: llm_error`, o `failed`); un error inesperado se reintenta y, en el último intento (`JOBS_MAX_ATTEMPTS`, el mismo valor que `maxReceiveCount` de la cola), el worker marca el job `failed` antes de que el mensaje pase a la DLQ. Para que el timeout de la Lambda no mate al agente a mitad de camino, el agente tiene un plazo: el tiempo restante de la invocación menos el peor caso de un paso; al vencer, corta con lo avanzado (`stopReason: time_limit`).
 - **Por qué dos Lambdas:** la API es corta, escala con el tráfico y solo necesita DynamoDB y SQS; el worker dura minutos y necesita el LLM, Secrets Manager y salida a internet. El evento de SQS limita el worker a **2 ejecuciones en paralelo**, el freno que protege los rate limits del LLM y de Tavily (la cuenta tiene un límite de 10 ejecuciones concurrentes, que impide reservar concurrencia).
 - **Dentro de AWS:** Cognito, API Gateway, Lambda, SQS + DLQ, DynamoDB, Secrets Manager y CloudWatch. **Fuera de AWS:** OpenRouter (LLM), Tavily y los sitios web públicos de las empresas.
 - **Cambiar a Bedrock:** `npm run aws:deploy -- LlmProvider=bedrock`. El parámetro cambia el adaptador y concede al worker el permiso IAM para invocar Claude; no hay cambios de código. Requiere que la cuenta tenga cuota y acceso a los modelos de Anthropic.
@@ -244,6 +245,7 @@ Las variables pasadas en la línea de comandos tienen prioridad sobre el `.env`.
 | `AGENT_MAX_ITERATIONS` / `AGENT_MAX_LEADS` | Límites del agente por ejecución | `20` / `10` |
 | `EXECUTION_MODE` | `sync` (local: responde el resumen) \| `async` (AWS: 202 + jobId, worker por SQS) | `sync` |
 | `JOBS_TABLE` / `JOBS_QUEUE_URL` | Tabla de jobs y URL de la cola SQS (obligatoria con `async`) | `jobs` / — |
+| `JOBS_MAX_ATTEMPTS` | Entregas de un job antes de la DLQ (igual a `maxReceiveCount`); en la última, el worker lo marca `failed` | `3` |
 | `CORS_ORIGINS` | Orígenes permitidos (separados por coma), p. ej. el frontend | — |
 | `SECRETS_ID` | Secreto de Secrets Manager con las API keys; se carga al arrancar (solo en AWS) | — |
 
@@ -278,7 +280,7 @@ El system prompt está en `src/core/agent/prompts/`, separado por responsabilida
 - **Salida estructurada:** el JSON Schema de `save_lead` se genera desde el schema Zod del Lead, con descripciones por campo; si la validación falla, el error vuelve al LLM para que se corrija.
 - **Defensa en profundidad en código:** el sitio web no puede ser una red social o un directorio conocido, y los campos de contexto (`id`, sector solicitado, ubicación, `jobId`, fecha) los asigna el código, no el LLM.
 - **Guardas de flujo deterministas** (`CandidateLedger`): no se busca de nuevo con resultados sin decidir ni se lee otra empresa con una leída sin decidir; aviso explícito cuando una búsqueda no trae novedades y **aviso de límite de iteraciones** cuando quedan 2 respuestas, para que el LLM decida lo pendiente y cierre con su resumen en lugar de quedar cortado.
-- **Límites:** máximo de iteraciones y de leads por ejecución. Temperatura 0 en los presets `groq` y `ollama`; es configurable y se omite con modelos que la rechazan (los Claude actuales, que se controlan con `effort`).
+- **Límites:** máximo de iteraciones y de leads por ejecución y, en el worker, un plazo de ejecución (`time_limit`). Temperatura 0 en los presets `groq` y `ollama`; es configurable y se omite con modelos que la rechazan (los Claude actuales, que se controlan con `effort`).
 - **Consumo medido:** cada adaptador informa los tokens de entrada y salida; el resumen de cada ejecución incluye `usage` (llamadas, tokens) para estimar el costo por job y por lead.
 - **Eficiencia de tokens:** como el historial se reenvía en cada llamada, el costo crece con las iteraciones; por eso se acotan las observaciones (extractos de 300 caracteres, páginas de 1.500), se compactan las antiguas con proveedores de cuota baja, el razonamiento usa esfuerzo bajo en Groq y el prefijo (system prompt + tools) se mantiene estable para aprovechar la caché de prefijo donde exista.
 - **Medición de calidad:** `npm run eval` (o `npm run eval -- --case dental-lima`) ejecuta el agente sobre casos dorados del dataset mock y reporta precisión, recall, trampas guardadas/descartadas y alucinaciones (cada email, teléfono o dirección guardado debe aparecer en la fuente).
@@ -314,6 +316,7 @@ Ejecuciones de `npm run eval` del 2026-11-20 con **Claude Haiku 5.5** (`anthropi
 - **Dataset mock:** cubre dos sectores (agencias de marketing y clínicas dentales en Lima); otros sectores devuelven cero resultados en modo mock.
 - **Lectura de páginas simple:** conversión HTML → texto sin render de JavaScript.
 - **Listado con `Scan`:** `GET /leads` recorre la tabla; en producción, índices por `jobId` o fecha.
+- **Plazo del agente por pasos:** el plazo se revisa entre pasos, no corta un paso en curso. Si un paso tardara más que el margen reservado (peor caso de una llamada al LLM con reintentos más una página), o si la Lambda muriera por memoria, el job quedaría en `running`; la alarma de la DLQ lo haría visible.
 - **Sin autenticación en la API local:** la autenticación (Cognito) solo existe en el despliegue de AWS.
 - **Un único usuario:** Cognito permite más usuarios y grupos, pero el acceso se limitó a uno porque cada búsqueda consume saldo del LLM y de Tavily; no hay cuotas por usuario.
 

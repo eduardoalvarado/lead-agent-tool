@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { LeadSchema } from './lead.js';
+import { STOP_REASONS } from './run-summary.js';
 import { SearchCriteriaSchema } from './search-criteria.js';
 
 // Job de búsqueda del flujo asíncrono: la API lo crea y responde 202; el worker lo ejecuta.
@@ -14,7 +15,7 @@ const StoredRunSummarySchema = z.object({
   savedLeads: z.array(LeadSchema),
   discarded: z.array(z.object({ companyName: z.string(), url: z.string(), reason: z.string() })),
   iterations: z.number().int().min(0),
-  stopReason: z.enum(['completed', 'max_iterations', 'max_leads', 'llm_error']),
+  stopReason: z.enum(STOP_REASONS),
   finalMessage: z.string().nullable(),
   error: z.string().nullable(),
   usage: z.object({

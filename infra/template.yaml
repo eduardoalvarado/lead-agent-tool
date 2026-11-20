@@ -42,6 +42,11 @@ Parameters:
   ApiBurstLimit:
     Type: Number
     Default: 5
+  JobMaxAttempts:
+    Type: Number
+    Default: 3
+    MinValue: 1
+    Description: Entregas de un job antes de pasar a la DLQ; en la última, el worker lo marca failed.
 
 Conditions:
   UseBedrock: !Equals [!Ref LlmProvider, bedrock]
@@ -58,6 +63,7 @@ Globals:
         DYNAMO_TABLE: !Ref LeadsTable
         JOBS_TABLE: !Ref JobsTable
         JOBS_QUEUE_URL: !Ref JobsQueue
+        JOBS_MAX_ATTEMPTS: !Ref JobMaxAttempts
         SECRETS_ID: !Ref SecretName
         LLM_PROVIDER: !If [UseBedrock, bedrock, openai-compatible]
         LLM_MODEL: !Ref LlmModel
@@ -204,7 +210,7 @@ Resources:
       MessageRetentionPeriod: 345600
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt JobsDeadLetterQueue.Arn
-        maxReceiveCount: 3
+        maxReceiveCount: !Ref JobMaxAttempts
 
   JobsDeadLetterQueue:
     Type: AWS::SQS::Queue
@@ -214,7 +220,7 @@ Resources:
   DeadLetterAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmDescription: Hay jobs en la DLQ (fallaron 3 veces).
+      AlarmDescription: Hay jobs en la DLQ (agotaron sus reintentos; el job quedó en failed).
       Namespace: AWS/SQS
       MetricName: ApproximateNumberOfMessagesVisible
       Dimensions:

@@ -44,6 +44,8 @@ export const AppConfigSchema = z
     EXECUTION_MODE: z.enum(['sync', 'async']).default('sync'),
     JOBS_TABLE: z.string().min(1).default('jobs'),
     JOBS_QUEUE_URL: z.url().optional(),
+    // Entregas de un mensaje antes de ir a la DLQ; debe coincidir con maxReceiveCount de la cola.
+    JOBS_MAX_ATTEMPTS: positiveInt(3),
     // Orígenes permitidos para CORS (separados por coma), p. ej. el frontend en GitHub Pages.
     CORS_ORIGINS: z.string().optional(),
 

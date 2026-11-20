@@ -39,7 +39,7 @@ function parseArguments(raw: string): unknown {
 /**
  * Agente ReAct sobre tool calling: en cada iteración el LLM razona y decide qué tool
  * usar (buscar, leer, guardar, descartar) o terminar respondiendo sin tools.
- * El código solo ejecuta, valida y aplica las guardas (iteraciones y leads máximos).
+ * El código solo ejecuta, valida y aplica las guardas (iteraciones, leads máximos y plazo).
  */
 export class LeadAgent {
   private readonly toolsByName: ReadonlyMap<string, AgentTool>;
@@ -56,7 +56,15 @@ export class LeadAgent {
     this.toolDefinitions = tools.map((tool) => tool.definition);
   }
 
-  async run(criteria: SearchCriteria, jobId: string): Promise<AgentRunSummary> {
+  /**
+   * @param deadline Plazo opcional de la ejecución (p. ej. el timeout de la Lambda). Al abortarse,
+   *   el agente corta antes de la siguiente llamada al LLM o a un tool, conservando lo avanzado.
+   */
+  async run(
+    criteria: SearchCriteria,
+    jobId: string,
+    deadline?: AbortSignal,
+  ): Promise<AgentRunSummary> {
     const run = new AgentRun(
       { criteria, jobId, ledger: new CandidateLedger() },
       [
@@ -67,7 +75,7 @@ export class LeadAgent {
     );
     this.logger.info('Agente iniciado', { jobId, ...criteria, ...this.options });
 
-    const stopReason = await this.loop(run);
+    const stopReason = await this.loop(run, deadline);
     const summary = run.summarize(stopReason);
     this.logger.info('Agente finalizado', {
       stopReason,
@@ -79,9 +87,10 @@ export class LeadAgent {
     return summary;
   }
 
-  private async loop(run: AgentRun): Promise<StopReason> {
+  private async loop(run: AgentRun, deadline?: AbortSignal): Promise<StopReason> {
     // Secuencial por diseño: cada paso del razonamiento depende del resultado del anterior.
     while (run.iteration < this.options.maxIterations) {
+      if (deadline?.aborted) return 'time_limit';
       run.startIteration();
       // eslint-disable-next-line no-await-in-loop
       const completion = await this.complete(run);
@@ -91,7 +100,8 @@ export class LeadAgent {
       if (completion.toolCalls.length === 0) return 'completed';
 
       // eslint-disable-next-line no-await-in-loop
-      if (await this.executeToolCalls(completion.toolCalls, run)) return 'max_leads';
+      const guardStop = await this.executeToolCalls(completion.toolCalls, run, deadline);
+      if (guardStop) return guardStop;
       this.warnIfNearIterationLimit(run);
     }
     return 'max_iterations';
@@ -119,14 +129,19 @@ export class LeadAgent {
     }
   }
 
-  /** Ejecuta los tool calls en orden; devuelve `true` si se alcanzó el máximo de leads. */
-  private async executeToolCalls(calls: readonly ToolCall[], run: AgentRun): Promise<boolean> {
+  /** Ejecuta los tool calls en orden; devuelve la guarda que corta la ejecución, si alguna. */
+  private async executeToolCalls(
+    calls: readonly ToolCall[],
+    run: AgentRun,
+    deadline?: AbortSignal,
+  ): Promise<StopReason | null> {
     for (const call of calls) {
+      if (deadline?.aborted) return 'time_limit';
       // eslint-disable-next-line no-await-in-loop
       run.recordToolResult(call, await this.executeToolCall(call, run));
-      if (run.savedCount >= this.options.maxLeads) return true;
+      if (run.savedCount >= this.options.maxLeads) return 'max_leads';
     }
-    return false;
+    return null;
   }
 
   private async executeToolCall(call: ToolCall, run: AgentRun): Promise<ToolResult> {

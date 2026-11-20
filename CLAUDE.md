@@ -25,16 +25,18 @@ Contexto para Claude Code. Léelo completo antes de escribir código.
 - PoC de un agente IA que recibe `sector` + `ubicación`, busca empresas en internet, extrae datos estructurados con un LLM, los **cualifica** (prioriza qué tan útil es el lead para ventas) y los guarda en DB.
 - Se evalúa: **diseño agéntico** (tool calling / ReAct, el LLM decide cuándo buscar y cuándo guardar), **prompt engineering** (JSON estructurado, mínimas alucinaciones), **arquitectura de software** (separación de capas) y **visión cloud** (diagrama AWS).
 - Prioridad: calidad y claridad sobre cantidad de features. Código que un evaluador entienda en 10 minutos.
-- **Sin frontend.** La API se prueba vía Swagger (`/docs`) y la CLI.
+- En local la API se prueba vía Swagger (`/docs`) y la CLI. La aplicación web de `docs/app/` (HTML estático en GitHub Pages, login con Cognito) solo existe para probar el despliegue en AWS; no es parte del núcleo.
 
 ## Stack (no cambiar sin consultar)
 
 - **Node.js 26 LTS** (`"engines": { "node": ">=24.10" }`, por `process.loadEnvFile`), TypeScript estricto (`strict: true`).
-- **NestJS solo en la capa exterior** (ver regla de arquitectura). `@nestjs/swagger` para documentar la API. `@codegenie/serverless-express` para el handler Lambda (target `nodejs24.x`).
+- **NestJS solo en la capa exterior** (ver regla de arquitectura). `@nestjs/swagger` para documentar la API. `@codegenie/serverless-express` para el handler de la λ `api` (target `nodejs24.x`).
 - LLM: **agnóstico al proveedor** vía el puerto `LLMProvider`; conectar otro LLM = un adaptador nuevo + su registro en la configuración (`LLM_PROVIDER`), sin tocar el núcleo. Adaptadores: `OpenAICompatibleProvider` (presets `groq` por defecto, `ollama` local y `openai-compatible` genérico) y `BedrockProvider` (Claude vía Amazon Bedrock, endpoint `bedrock-mantle`; adaptador de producción, requiere que la cuenta AWS tenga acceso a modelos de Anthropic). Modelo configurable por env.
 - Búsqueda: puerto `SearchProvider`; adaptadores `TavilyProvider` y `MockSearchProvider` (datos realistas de Lima, Perú).
 - Validación: Zod (env, DTOs/requests, output del LLM).
-- DB: DynamoDB Local vía docker-compose, AWS SDK v3. Puerto `LeadRepository`; adaptador `DynamoLeadRepository`. PK = dominio normalizado del sitio web (dedupe).
+- DB: DynamoDB Local vía docker-compose, AWS SDK v3. Puerto `LeadRepository`; adaptador `DynamoLeadRepository`. PK = dominio normalizado del sitio web (dedupe). Tabla `jobs` (PK `jobId`) detrás del puerto `JobRepository`.
+- Flujo asíncrono: puerto `JobQueue`; adaptadores `SqsJobQueue` y `UnavailableJobQueue` (modo `sync`). En AWS las API keys se leen de Secrets Manager al arrancar (`SECRETS_ID`).
+- Infraestructura: AWS SAM (`infra/template.yaml`), desplegada con `aws cloudformation` desde `scripts/aws/` (no requiere SAM CLI).
 - Tests: Vitest (núcleo) + `@nestjs/testing` solo para el e2e del controller. Vitest usa `unplugin-swc` para soportar `emitDecoratorMetadata` en el e2e.
 - Lint/format: ESLint (estilo Airbnb) + Prettier.
 - **No usar LangChain** salvo que se pida; el bucle ReAct se implementa a mano sobre el tool calling del SDK.
@@ -53,14 +55,18 @@ src/app/             NestJS: config, módulos, controllers, providers/tokens, ma
 - Dirección de dependencias: `app → core` y `app → infrastructure → core(ports)`. Nunca al revés.
 - Hacer cumplir la regla con ESLint `no-restricted-imports` en `src/core/**` y `src/infrastructure/**`.
 - Los tests del núcleo instancian clases directamente con fakes de los puertos, **sin levantar Nest**.
-- HTTP, CLI (`NestFactory.createApplicationContext`) y Lambda reutilizan el mismo `SearchLeadsUseCase`.
+- Todos los puntos de entrada usan el mismo `AppModule` y el mismo `LeadAgent`; ninguno contiene lógica de negocio.
+- `EXECUTION_MODE` elige el flujo de `POST /leads/search` (decisión en la sección 2 del README):
+  - `sync` (local): HTTP (`main.ts`) y CLI (`cli.ts`, `NestFactory.createApplicationContext`) ejecutan `SearchLeadsUseCase` y responden el resumen.
+  - `async` (AWS): la λ `api` (`lambda.ts`) ejecuta `SubmitSearchJobUseCase` (crea el job, lo encola y responde `202` + `jobId`); la λ `agent-worker` (`worker.ts`, evento SQS) ejecuta `ProcessSearchJobUseCase`; `GET /jobs/{id}` usa `GetJobUseCase`.
+- Estados del job: `pending → running → completed | failed`. Los errores de dominio marcan el job `failed` sin reintentar; los inesperados se relanzan para que SQS reintente. En el último intento (`JOBS_MAX_ATTEMPTS`, igual a `maxReceiveCount`) el worker marca el job `failed` antes de que el mensaje vaya a la DLQ: ningún job queda en `running` para siempre.
 
 ## Diseño del agente
 
 - Tools: `search_web(query)`, `fetch_page(url)` (opcional, contenido truncado), `save_lead(lead)`, `discard_lead(companyName, url, reason)`.
 - Guardas de flujo en código (`CandidateLedger`): no se busca de nuevo con resultados sin decidir ni se lee otra empresa con una leída sin decidir.
 - `save_lead` valida con el schema Zod de `core/domain`; si falla, devuelve el error como resultado del tool para que el LLM corrija (no lanzar excepción).
-- Guardas: `AGENT_MAX_ITERATIONS` (default 20), `AGENT_MAX_LEADS` (default 10), timeout por llamada. Determinismo: temperatura 0 en los presets `groq`/`ollama`, configurable con `LLM_TEMPERATURE` y omitida si no se define (los Claude actuales la rechazan); los modelos actuales de Claude no aceptan `temperature`, se usa `effort` + reglas del prompt.
+- Guardas: `AGENT_MAX_ITERATIONS` (default 20), `AGENT_MAX_LEADS` (default 10), timeout por llamada y un plazo opcional (`AbortSignal`) que el worker deriva del tiempo restante de la Lambda; al vencer, el agente corta entre pasos con `stopReason: time_limit`. Determinismo: temperatura 0 en los presets `groq`/`ollama`, configurable con `LLM_TEMPERATURE` y omitida si no se define (los Claude actuales la rechazan); los modelos actuales de Claude no aceptan `temperature`, se usa `effort` + reglas del prompt.
 - Loguear cada paso del razonamiento (tool elegido, argumentos, resumen del resultado) a través del puerto `Logger`; es parte de la demo.
 - El agente termina con un resumen: leads guardados, descartados y motivo.
 
@@ -111,4 +117,6 @@ npm run db:init    # crear tabla en DynamoDB Local
 npm test           # Vitest
 npm run lint       # ESLint
 npm run build      # nest build
+npm run eval       # evaluación del agente con casos dorados (LLM real, modo mock)
+npm run aws:deploy # empaqueta y despliega infra/template.yaml (también aws:secrets, aws:user, aws:destroy)
 ```
