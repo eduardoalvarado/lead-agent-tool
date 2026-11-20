@@ -28,12 +28,12 @@ Documento interno de seguimiento. **No es parte del entregable.** Claude Code ma
 
 ## Checklist de entrega
 
-- [ ] Repositorio público, sin secretos (`.env` en `.gitignore`, `.env.example` completo)
-- [ ] `README.md` sin comentarios `TODO` pendientes
-- [ ] Comandos del README verificados desde un clon limpio
-- [ ] `docs/architecture.png` enlazado en el README
-- [ ] Demo en modo mock funcionando sin key de búsqueda
-- [ ] Lint, build y tests en verde
+- [x] Repositorio público, sin secretos (`.env` en `.gitignore`, `.env.example` completo): github.com/eduardoalvarado/lead-agent-tool
+- [x] `README.md` sin comentarios `TODO` pendientes
+- [x] Comandos del README verificados desde un clon limpio (local; repetir tras publicar)
+- [x] `docs/architecture.png` enlazado en el README
+- [x] Demo en modo mock funcionando sin key de búsqueda (solo requiere la key del LLM)
+- [x] Lint, build y tests en verde (118 tests, cobertura 90 %)
 
 ## Notas y decisiones durante la implementación
 
@@ -53,3 +53,4 @@ Documento interno de seguimiento. **No es parte del entregable.** Claude Code ma
 - 2026-11-20 — LLM: Bedrock tiene cuota 0 (no ajustable) para todos los modelos en la cuenta del usuario, no solo Anthropic. `GroqProvider` se reemplaza por `OpenAICompatibleProvider` (SDK `openai`, se elimina `groq-sdk`) con presets en `LLM_ADAPTERS`: `groq` (default), `ollama` (local, `qwen3:8b`) y `openai-compatible` (URL/modelo/key por env). Variables genéricas `LLM_API_KEY`/`LLM_MODEL`/`LLM_BASE_URL` reemplazan `GROQ_*` (`.env` migrado conservando la key). El smoke script reutiliza `loadAppConfig` y `LLM_ADAPTERS`. Verificado contra Groq real.
 - 2026-11-20 — Bloque 3: prompt dividido en archivos dedicados (flujo, reglas de extracción + seguridad ante prompt injection, rúbrica de cualificación de 100 puntos con guía de `confidence`, aviso de presupuesto). El agente avisa una vez al LLM cuando quedan 2 respuestas. Descripciones de tools con cuándo usarlas y qué no hacer. Evaluación con casos dorados (`npm run eval`, `scripts/eval/`): precisión, recall, trampas y alucinaciones con comparación tolerante a formato; marca la evaluación como incompleta si el LLM falla. Pendiente: ejecutar la evaluación con un LLM con cuota (Groq agotado en la primera llamada) y ajustar el prompt según los resultados.
 - 2026-11-20 — Optimización de tokens (pedido del usuario): renombre a "aviso de límite de iteraciones"; consumo de tokens medido por llamada (`usage` en el puerto, sumado en `AgentRunSummary.usage` y expuesto en la API y en la evaluación); `LLM_REASONING_EFFORT` (preset groq = low); extractos 500→300 y páginas 2500→1500 caracteres; descripciones de tools recortadas (el schema de tools quedó más chico que antes); evaluación con `--case` y tope de leads = leads válidos del caso. Prefijo fijo medido sin LLM: ~1.690 → ~1.940 tokens (rúbrica + seguridad). Pendiente medir el consumo real con un LLM disponible.
+- 2026-11-20 — Bloque 8: clon limpio verificado (npm install, docker compose, db:init ×2, test, test:integration, test:coverage, lint, build, CLI en modo mock, start:dev + Swagger + POST/GET). El agente corta con `llm_error` por la cuota diaria de Groq (comportamiento controlado). Pendiente: publicar el repositorio (sin remoto ni sesión de `gh`), reemplazar el placeholder del `git clone` y cerrar el bloque 3 con la evaluación completa.

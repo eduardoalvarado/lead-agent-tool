@@ -176,11 +176,9 @@ El LLM solo aporta los datos extraídos de la fuente. `id` (dominio normalizado)
 
 ## 6. Instalación y ejecución
 
-<!-- TODO(bloque 8): verificar todos los comandos desde un clon limpio. -->
-
 ```bash
 # Requisitos: Node >=24.10 (recomendado 26), Docker
-git clone <url-del-repositorio> && cd <directorio>
+git clone https://github.com/eduardoalvarado/lead-agent-tool.git && cd lead-agent-tool
 cp .env.example .env          # completar LLM_API_KEY (key de Groq) y, para búsqueda real, TAVILY_API_KEY
 npm install
 docker compose up -d          # DynamoDB Local en :8000
