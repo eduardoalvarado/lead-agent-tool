@@ -1,0 +1,270 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Lead Agent: API asíncrona (API Gateway + Lambda + SQS + DynamoDB) protegida con Cognito.
+  El LLM es intercambiable por parámetro (OpenRouter o Amazon Bedrock).
+
+Parameters:
+  LlmProvider:
+    Type: String
+    Default: openrouter
+    AllowedValues: [openrouter, bedrock]
+    Description: openrouter (API compatible con OpenAI, key en Secrets Manager) o bedrock (Claude vía IAM).
+  LlmModel:
+    Type: String
+    Default: anthropic/claude-haiku-5.5
+  LlmBaseUrl:
+    Type: String
+    Default: https://openrouter.ai/api/v1
+  LlmReasoningEffort:
+    Type: String
+    Default: medium
+    AllowedValues: [low, medium, high]
+  BedrockModel:
+    Type: String
+    Default: anthropic.claude-haiku-5-5
+  SearchProvider:
+    Type: String
+    Default: tavily
+    AllowedValues: [tavily, mock]
+  SecretName:
+    Type: String
+    Default: lead-agent/api-keys
+    Description: Secreto JSON con LLM_API_KEY y TAVILY_API_KEY (lo crea scripts/aws/put-secrets.sh).
+  AllowedOrigin:
+    Type: String
+    Default: https://eduardoalvarado.github.io
+    Description: Origen del frontend autorizado por CORS.
+  ApiRateLimit:
+    Type: Number
+    Default: 2
+    Description: Solicitudes por segundo permitidas en la API (protege el costo del LLM).
+  ApiBurstLimit:
+    Type: Number
+    Default: 5
+
+Conditions:
+  UseBedrock: !Equals [!Ref LlmProvider, bedrock]
+
+Globals:
+  Function:
+    Runtime: nodejs24.x
+    Architectures: [x86_64]
+    MemorySize: 1024
+    Environment:
+      Variables:
+        NODE_OPTIONS: --enable-source-maps
+        EXECUTION_MODE: async
+        DYNAMO_TABLE: !Ref LeadsTable
+        JOBS_TABLE: !Ref JobsTable
+        JOBS_QUEUE_URL: !Ref JobsQueue
+        SECRETS_ID: !Ref SecretName
+        LLM_PROVIDER: !If [UseBedrock, bedrock, openai-compatible]
+        LLM_MODEL: !Ref LlmModel
+        LLM_BASE_URL: !Ref LlmBaseUrl
+        LLM_REASONING_EFFORT: !Ref LlmReasoningEffort
+        BEDROCK_MODEL: !Ref BedrockModel
+        SEARCH_PROVIDER: !Ref SearchProvider
+        CORS_ORIGINS: !Ref AllowedOrigin
+        LOG_LEVEL: info
+
+Resources:
+  # --- Identidad: un único usuario creado por el administrador (sin registro público) ---
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: lead-agent-users
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: lead-agent-web
+      GenerateSecret: false
+      ExplicitAuthFlows: [ALLOW_USER_PASSWORD_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
+      PreventUserExistenceErrors: ENABLED
+
+  # --- API: autorizador Cognito, CORS para el frontend y límite de solicitudes ---
+  Api:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Auth:
+        DefaultAuthorizer: CognitoAuth
+        AddDefaultAuthorizerToCorsPreflight: false
+        Authorizers:
+          CognitoAuth:
+            UserPoolArn: !GetAtt UserPool.Arn
+      Cors:
+        AllowOrigin: !Sub "'${AllowedOrigin}'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowMethods: "'GET,POST,OPTIONS'"
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: !Sub "'${AllowedOrigin}'"
+              Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: !Sub "'${AllowedOrigin}'"
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod: '*'
+          ThrottlingRateLimit: !Ref ApiRateLimit
+          ThrottlingBurstLimit: !Ref ApiBurstLimit
+
+  # --- λ api: la app NestJS (lambda.ts) en modo async ---
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../.aws-build/app
+      Handler: dist/app/lambda.handler
+      Timeout: 29
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref LeadsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref JobsTable }
+        - SQSSendMessagePolicy: { QueueName: !GetAtt JobsQueue.QueueName }
+        - AWSSecretsManagerGetSecretValuePolicy:
+            SecretArn: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretName}-*
+      Events:
+        Root:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /
+            Method: ANY
+        Proxy:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: '/{proxy+}'
+            Method: ANY
+        Docs:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /docs
+            Method: GET
+            Auth: { Authorizer: NONE }
+        DocsAssets:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: '/docs/{proxy+}'
+            Method: GET
+            Auth: { Authorizer: NONE }
+
+  # --- λ agent-worker: consume SQS y ejecuta el agente (hasta 15 min, máx. 2 en paralelo) ---
+  WorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../.aws-build/app
+      Handler: dist/app/worker.handler
+      Timeout: 900
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref LeadsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref JobsTable }
+        - AWSSecretsManagerGetSecretValuePolicy:
+            SecretArn: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretName}-*
+        - !If
+          - UseBedrock
+          - Statement:
+              - Effect: Allow
+                Action: [bedrock-mantle:CreateInference]
+                Resource: '*'
+          - !Ref AWS::NoValue
+      Events:
+        Jobs:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt JobsQueue.Arn
+            BatchSize: 1
+            FunctionResponseTypes: [ReportBatchItemFailures]
+            # Techo de ejecuciones simultáneas: protege los rate limits del LLM y de Tavily
+            # (alternativa a la concurrencia reservada, no disponible con el límite de cuenta de 10).
+            ScalingConfig:
+              MaximumConcurrency: 2
+
+  # --- Cola de jobs con DLQ ---
+  JobsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 960 # mayor que el timeout del worker (900 s)
+      MessageRetentionPeriod: 345600
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt JobsDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  JobsDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+
+  DeadLetterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Hay jobs en la DLQ (fallaron 3 veces).
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt JobsDeadLetterQueue.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  # --- Datos (misma clave que src/infrastructure/persistence/*-table.ts) ---
+  LeadsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{ AttributeName: id, AttributeType: S }]
+      KeySchema: [{ AttributeName: id, KeyType: HASH }]
+
+  JobsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{ AttributeName: jobId, AttributeType: S }]
+      KeySchema: [{ AttributeName: jobId, KeyType: HASH }]
+
+  # --- Logs con retención acotada ---
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ApiFunction}
+      RetentionInDays: 14
+
+  WorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${WorkerFunction}
+      RetentionInDays: 14
+
+Outputs:
+  ApiUrl:
+    Value: !Sub https://${Api}.execute-api.${AWS::Region}.amazonaws.com/prod
+  SwaggerUrl:
+    Value: !Sub https://${Api}.execute-api.${AWS::Region}.amazonaws.com/prod/docs
+  UserPoolId:
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+  Region:
+    Value: !Ref AWS::Region
+  DeadLetterQueueUrl:
+    Value: !Ref JobsDeadLetterQueue

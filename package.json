@@ -25,7 +25,11 @@
     "agent": "node dist/app/cli.js",
     "preagent": "nest build",
     "test:coverage": "vitest run --coverage --coverage.include=src/core --coverage.include=src/infrastructure --coverage.include=src/app",
-    "eval": "node --env-file-if-exists=.env --import tsx scripts/eval-agent.ts"
+    "eval": "node --env-file-if-exists=.env --import tsx scripts/eval-agent.ts",
+    "aws:secrets": "bash scripts/aws/put-secrets.sh",
+    "aws:deploy": "bash scripts/aws/deploy.sh",
+    "aws:user": "bash scripts/aws/create-user.sh",
+    "aws:destroy": "bash scripts/aws/destroy.sh"
   },
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^1.1.2",

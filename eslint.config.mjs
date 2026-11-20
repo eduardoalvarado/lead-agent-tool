@@ -21,7 +21,7 @@ const restrictedImportsFor = (layer) => [
 ];
 
 export default tseslint.config(
-  { ignores: ['dist/**', 'coverage/**', 'node_modules/**'] },
+  { ignores: ['dist/**', 'coverage/**', 'node_modules/**', '.aws-build/**'] },
   js.configs.recommended,
   plugins.stylistic,
   plugins.importX,

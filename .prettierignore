@@ -6,3 +6,4 @@ package-lock.json
 # Artefactos generados por Archify (con huella SHA-256): no reformatear
 docs/agent-activity.html
 docs/diagrams/*.archify.json
+.aws-build
