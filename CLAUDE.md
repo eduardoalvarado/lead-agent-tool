@@ -25,7 +25,7 @@ Contexto para Claude Code. Léelo completo antes de escribir código.
 - PoC de un agente IA que recibe `sector` + `ubicación`, busca empresas en internet, extrae datos estructurados con un LLM, los **cualifica** (prioriza qué tan útil es el lead para ventas) y los guarda en DB.
 - Se evalúa: **diseño agéntico** (tool calling / ReAct, el LLM decide cuándo buscar y cuándo guardar), **prompt engineering** (JSON estructurado, mínimas alucinaciones), **arquitectura de software** (separación de capas) y **visión cloud** (diagrama AWS).
 - Prioridad: calidad y claridad sobre cantidad de features. Código que un evaluador entienda en 10 minutos.
-- **Sin frontend.** La API se prueba vía Swagger (`/docs`) y la CLI.
+- **Frontend mínimo y aparte del núcleo:** `public/index.html` (HTML estático sin framework ni build) lo sirve el servidor local (`main.ts` → `web-app.ts`) en `/`. Llama a la API del mismo origen; no contiene lógica de negocio. La API también se prueba vía Swagger (`/docs`) y la CLI.
 
 ## Stack (no cambiar sin consultar)
 

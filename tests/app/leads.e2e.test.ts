@@ -1,8 +1,10 @@
 import type { INestApplication } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AppModule } from '../../src/app/app.module.js';
 import { DomainExceptionFilter } from '../../src/app/common/domain-exception.filter.js';
+import { serveWebApp } from '../../src/app/web-app.js';
 import { loadAppConfig } from '../../src/app/config/app-config.js';
 import { APP_CONFIG, LEAD_REPOSITORY, LLM_PROVIDER } from '../../src/app/providers/tokens.js';
 import { PersistenceError } from '../../src/core/domain/errors/persistence.error.js';
@@ -37,10 +39,12 @@ async function startApp(llm: LLMProvider, repository: LeadRepository): Promise<s
     .overrideProvider(LEAD_REPOSITORY)
     .useValue(repository)
     .compile();
-  app = moduleRef.createNestApplication({ logger: false });
-  app.useGlobalFilters(new DomainExceptionFilter());
-  await app.listen(0);
-  return app.getUrl();
+  const nestApp = moduleRef.createNestApplication<NestExpressApplication>({ logger: false });
+  nestApp.useGlobalFilters(new DomainExceptionFilter());
+  serveWebApp(nestApp);
+  app = nestApp;
+  await nestApp.listen(0);
+  return nestApp.getUrl();
 }
 
 function postSearch(baseUrl: string, body: unknown): Promise<Response> {
@@ -81,6 +85,17 @@ describe('LeadsController (e2e)', () => {
       finalMessage: 'Guardé 1 lead.',
     });
     expect(list).toEqual([expect.objectContaining({ id: 'sonrisaclara.pe' })]);
+  });
+
+  it('GET / sirve la app web local sin interferir con la API', async () => {
+    const baseUrl = await startApp(new ScriptedLlm([]), new FakeLeadRepository());
+
+    const page = await fetch(`${baseUrl}/`);
+
+    expect(page.status).toBe(200);
+    expect(page.headers.get('content-type')).toContain('text/html');
+    expect(await page.text()).toContain('Lead Agent');
+    expect((await fetch(`${baseUrl}/leads`)).status).toBe(200);
   });
 
   it('POST /leads/search rechaza una entrada inválida con 400', async () => {

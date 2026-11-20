@@ -1,5 +1,5 @@
-import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module.js';
 import { DomainExceptionFilter } from './common/domain-exception.filter.js';
@@ -8,9 +8,9 @@ import { loadDotEnvIfPresent } from './config/app-config.js';
 const SWAGGER_PATH = 'docs';
 
 /** Aplicación HTTP compartida por el servidor local (`main.ts`) y el handler Lambda. */
-export async function createHttpApp(): Promise<INestApplication> {
+export async function createHttpApp(): Promise<NestExpressApplication> {
   loadDotEnvIfPresent();
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.useGlobalFilters(new DomainExceptionFilter());
 
   const swaggerConfig = new DocumentBuilder()

@@ -8,7 +8,7 @@ Prueba de concepto (PoC) de un agente IA que, a partir de un **sector empresaria
 
 Hoy la prospección es manual: un vendedor busca "clínicas dentales en Lima", entra a cada web, copia nombre, actividad y contacto a un Excel. Este agente automatiza ese flujo:
 
-1. Recibe `sector` + `ubicación` (CLI o endpoint HTTP).
+1. Recibe `sector` + `ubicación` (app web local, endpoint HTTP o CLI).
 2. El LLM decide qué buscar y ejecuta búsquedas web (tool calling).
 3. Analiza los resultados y descarta lo que no es una empresa real del sector, registrando el motivo.
 4. **Extrae** datos estructurados (JSON validado).
@@ -30,7 +30,7 @@ Hoy la prospección es manual: un vendedor busca "clínicas dentales en Lima", e
 | ¿Endpoint síncrono o asíncrono? | En la PoC, `POST /leads/search` es **síncrono** (devuelve el resumen al terminar) y `GET /leads` lista los leads guardados. En producción el flujo es asíncrono (`202` + `jobId`, ver 3.2). |
 | ¿Cuántas Lambdas en producción? | **Dos**, apegadas al código: `api` (la app NestJS completa, el `lambda.ts` ya implementado) y `agent-worker` (consume SQS y ejecuta el mismo caso de uso). Separar API y worker es necesario (duración, concurrencia y permisos IAM opuestos); separar más la API no aporta valor. |
 | ¿Qué LLM usa la PoC? | El LLM es **intercambiable** por configuración (`LLM_PROVIDER`): un adaptador genérico compatible con OpenAI cubre Groq, Ollama (local) y cualquier otro proveedor compatible; `BedrockProvider` cubre Claude en AWS. La PoC usa **Groq** (`openai/gpt-oss-120b`): la cuenta AWS disponible tiene cuota 0 en Bedrock para todos los modelos (ampliarla requiere un caso con AWS Support) y Claude además exige autorización de Anthropic. `BedrockProvider` está implementado y testeado, y es el proveedor objetivo de producción. |
-| ¿Interfaz frontend? | **Fuera de alcance**: no es entregable ni criterio de evaluación. Se expone **Swagger** (`/docs`) para probar la API y la CLI muestra el razonamiento del agente. |
+| ¿Interfaz frontend? | No es entregable ni criterio de evaluación, pero se incluye una **app web local mínima** (`public/index.html`) para probar el agente sin herramientas: la sirve el mismo servidor de la API en `http://localhost:3000/` (mismo origen, sin CORS ni login) y muestra cada lead con el desglose de su puntaje. HTML estático sin framework ni build. **Swagger** (`/docs`) y la CLI siguen disponibles. |
 
 ---
 
@@ -115,9 +115,11 @@ src/
     ├── leads/                    # LeadsModule, LeadsController, DTOs de Swagger
     ├── providers/                # tokens, factories (composition root), registro LLM_ADAPTERS
     ├── http-app.factory.ts       # app HTTP compartida por main.ts y lambda.ts
-    ├── main.ts                   # servidor HTTP local
+    ├── web-app.ts                # sirve la app web local (public/) desde el servidor local
+    ├── main.ts                   # servidor HTTP local: API, Swagger y app web
     ├── cli.ts                    # CLI (createApplicationContext)
     └── lambda.ts                 # handler AWS Lambda (@codegenie/serverless-express)
+public/                           # index.html: app web local (HTML estático, sin build)
 scripts/                          # db-init.ts, smoke-agent.ts (agente sin Nest), eval-agent.ts + eval/ (casos dorados)
 tests/                            # core/, infrastructure/, app/ (incluye e2e), eval/, integration/, support/
 docs/                             # diagramas (HTML, PNG, Mermaid)
@@ -140,7 +142,8 @@ La regla de dependencias entre capas se hace cumplir dos veces, con una sola fue
 | Búsqueda | Tavily + `MockSearchProvider` | Tavily devuelve contenido limpio para LLMs; el mock permite demos y tests sin key ni red. |
 | Validación | Zod | Un solo esquema para el output del LLM (y el JSON Schema de los tools), el entorno y los requests. |
 | Base de datos | DynamoDB (Local en Docker) | Coherente con el diseño serverless; PK = dominio con escritura condicional para deduplicar de forma atómica. Detrás de `LeadRepository`. |
-| Documentación API | `@nestjs/swagger` | Interfaz interactiva para el evaluador sin construir un frontend. |
+| Documentación API | `@nestjs/swagger` | Interfaz interactiva de la API, generada desde los DTOs. |
+| App web local | HTML estático servido por Nest (`useStaticAssets`) | Permite probar el agente desde el navegador sin agregar un framework, un build ni dependencias; no es parte del núcleo. |
 | Tests | Vitest (+ SWC para el e2e de Nest) | Núcleo testeado sin Nest con fakes de los puertos; e2e del controller con `@nestjs/testing`. |
 
 ---
@@ -182,36 +185,58 @@ El LLM solo aporta los datos extraídos de la fuente y las señales de cualifica
 
 ## 6. Instalación y ejecución
 
+**Requisitos:** Node.js `>=24.10` (recomendado 26), Docker y una API key de LLM. Por defecto se usa Groq, que tiene un plan gratuito ([console.groq.com/keys](https://console.groq.com/keys)). La key de Tavily solo hace falta para búsquedas reales: en modo mock (el default) el agente busca en un dataset ficticio de Lima, sin red.
+
+**1. Instalar y configurar**
+
 ```bash
-# Requisitos: Node >=24.10 (recomendado 26), Docker
 git clone https://github.com/eduardoalvarado/lead-agent-tool.git && cd lead-agent-tool
-cp .env.example .env          # completar LLM_API_KEY (key de Groq) y, para búsqueda real, TAVILY_API_KEY
 npm install
-docker compose up -d          # DynamoDB Local en :8000
-npm run db:init               # crea la tabla (idempotente)
+cp .env.example .env          # completar LLM_API_KEY; para búsqueda real, también TAVILY_API_KEY
+```
 
-# CLI (compila y ejecuta; por defecto SEARCH_PROVIDER=mock: sin key de búsqueda ni red)
-npm run agent -- --sector "Agencias de marketing" --location "Lima, Perú"
+**2. Levantar la base de datos**
 
-# Búsqueda real con Tavily
-SEARCH_PROVIDER=tavily npm run agent -- --sector "Clínicas dentales" --location "Lima, Perú"
+```bash
+docker compose up -d          # DynamoDB Local en :8000 (en memoria: se vacía al detener el contenedor)
+npm run db:init               # crea la tabla; espera a que DynamoDB Local esté listo y es idempotente
+```
 
-# API + Swagger en http://localhost:3000/docs
-npm run start:dev
+**3. Ejecutar el agente** (cualquiera de las tres formas)
+
+```bash
+# a) App web local + API + Swagger
+npm run start:dev             # app web en http://localhost:3000 · Swagger en http://localhost:3000/docs
+
+# b) API por HTTP (con el servidor del paso a levantado)
 curl -X POST http://localhost:3000/leads/search \
   -H "Content-Type: application/json" \
   -d '{"sector":"Clínicas dentales","location":"Lima, Perú"}'
 curl http://localhost:3000/leads
 
-# Calidad
-npm test                      # tests unitarios + e2e
-npm run eval                  # evaluación del agente con casos dorados (usa el LLM real, modo mock)
-npm run test:integration      # contra DynamoDB Local (requiere Docker)
-npm run test:coverage
-npm run lint && npm run build
+# c) CLI: compila, ejecuta e imprime el resumen; el razonamiento paso a paso queda en el log
+npm run agent -- --sector "Agencias de marketing" --location "Lima, Perú"
 ```
 
-Las variables pasadas en la línea de comandos tienen prioridad sobre el `.env`. El modo mock solo requiere la key del LLM.
+`POST /leads/search` es síncrono: responde cuando el agente termina (entre 30 segundos y unos minutos). En modo mock hay datos de **agencias de marketing** y **clínicas dentales** en Lima; otros sectores devuelven cero resultados.
+
+**Búsqueda real con Tavily:** `SEARCH_PROVIDER=tavily` en el `.env`, o solo para un comando:
+
+```bash
+SEARCH_PROVIDER=tavily npm run agent -- --sector "Clínicas dentales" --location "Lima, Perú"
+```
+
+**4. Calidad**
+
+```bash
+npm test                      # tests unitarios + e2e
+npm run lint && npm run build
+npm run test:coverage
+npm run test:integration      # contra DynamoDB Local (requiere el paso 2)
+npm run eval                  # evaluación del agente con casos dorados (usa el LLM real, modo mock)
+```
+
+Las variables pasadas en la línea de comandos tienen prioridad sobre el `.env`.
 
 **Otro LLM sin tocar código:** `LLM_PROVIDER=ollama` usa un modelo local (requiere [Ollama](https://ollama.com) con un modelo con tool calling, p. ej. `ollama pull qwen3:8b`); `LLM_PROVIDER=openai-compatible` con `LLM_BASE_URL`, `LLM_MODEL` y `LLM_API_KEY` usa cualquier API compatible con OpenAI (OpenRouter, Gemini, Cerebras…).
 
@@ -311,4 +336,4 @@ Ejecuciones de `npm run eval` del 2026-11-20 con **Claude Haiku 5.5** (`anthropi
 
 *Producto*
 
-- Frontend para el equipo comercial (listado, filtros por score, exportación).
+- Frontend de producto para el equipo comercial: la app local actual es mínima (buscar y listar); faltan filtros por puntaje, exportación, autenticación y seguimiento de búsquedas largas.

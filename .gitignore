@@ -10,3 +10,6 @@ coverage/
 .idea/
 .vscode/
 .claude/settings.local.json
+
+# Paquete de despliegue de la rama feat/aws-deploy
+.aws-build/
