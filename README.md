@@ -266,8 +266,8 @@ Ejecución de `npm run eval` del 2026-11-20 con **Claude Haiku 5.5** (`anthropic
 
 Observaciones de la misma ejecución:
 
-- **Aritmética de la rúbrica:** en 1 de 6 leads el modelo sumó mal un criterio (contactabilidad 10 en lugar de 15 con teléfono y dirección). Mejora prevista: que el LLM entregue el desglose por criterio y el código calcule el total.
-- **Guardas y paralelismo:** Claude emite varios tool calls por turno; las guardas de flujo (pensadas para modelos que posponen decisiones) bloquean la segunda búsqueda o lectura simultánea. El agente se recupera en la iteración siguiente, a costa de alguna llamada extra.
+- **Aritmética de la rúbrica:** en 1 de 6 leads el modelo sumó mal un criterio (contactabilidad 10 en lugar de 15 con teléfono y dirección). Ver la mejora "Puntaje de cualificación determinista" en la sección 8.
+- **Guardas y paralelismo:** Claude emite varios tool calls por turno; las guardas de flujo (pensadas para modelos que posponen decisiones) bloquean la segunda búsqueda o lectura simultánea. El agente se recupera en la iteración siguiente, a costa de alguna llamada extra. Ver la mejora correspondiente en la sección 8.
 - El dataset mock tiene 2 sectores: los resultados validan el comportamiento del agente y del prompt, no su rendimiento sobre búsquedas reales.
 
 ---
@@ -279,21 +279,34 @@ Observaciones de la misma ejecución:
 - **Flujo asíncrono no implementado:** el endpoint es síncrono y puede tardar minutos; falta el worker SQS, el registro de jobs y `GET /jobs/{id}` (ver 3.2).
 - **LLM en free tier:** Groq limita a 8.000 tokens/minuto y 200.000 tokens/día; por eso se compactan las observaciones antiguas del historial y las ejecuciones reales por día son pocas. La cuenta AWS disponible tiene cuota 0 en Bedrock (no ajustable desde la consola) y Claude además exige autorización de Anthropic.
 - **Modelo por defecto:** `gpt-oss-120b` (gratis en Groq) emite un tool call por turno y tiende a postergar decisiones; las guardas de flujo lo compensan. Claude Haiku 5.5 resolvió la evaluación en 7 iteraciones por caso (ver 7.1).
-- **Puntaje calculado por el LLM:** la suma de la rúbrica la hace el modelo y puede equivocarse (1 de 6 leads en la evaluación); falta calcularla en código a partir del desglose.
+- **Puntaje calculado por el LLM:** la suma de la rúbrica la hace el modelo y puede equivocarse (1 de 6 leads en la evaluación).
 - **Dataset mock:** cubre dos sectores (agencias de marketing y clínicas dentales en Lima); otros sectores devuelven cero resultados en modo mock.
 - **Lectura de páginas simple:** conversión HTML → texto sin render de JavaScript.
 - **Listado con `Scan`:** `GET /leads` recorre la tabla; en producción, índices por `jobId` o fecha.
 - **Sin autenticación en la API local:** en producción, API key + usage plan en API Gateway.
 
-**Mejoras futuras**
+**Mejoras futuras (qué falta para producción)**
 
-- Rate limits y reintentos con backoff hacia LLM y búsqueda; concurrencia controlada por cola.
+*Agente y calidad del LLM*
+
+- **Puntaje de cualificación determinista.** Hoy el LLM aplica la rúbrica y también suma el total, y en la evaluación se equivocó en 1 de 6 leads (contactabilidad 10 en lugar de 15). Propuesta: que `save_lead` reciba el desglose por criterio (encaje, legitimidad, contactabilidad, madurez), que Zod valide el máximo de cada uno y que el código calcule `qualificationScore`. El LLM solo juzga las señales; la aritmética queda garantizada, es auditable por criterio y permite ajustar los pesos sin tocar el prompt.
+- **Guardas de flujo compatibles con tool calling en paralelo.** Las guardas (`CandidateLedger`) se diseñaron para un modelo que posponía decisiones, y bloquean la segunda búsqueda o lectura cuando un modelo como Claude emite varias llamadas en el mismo turno; el agente se recupera, pero gasta llamadas. Propuesta: evaluar las guardas por turno y no por llamada, permitiendo leer en paralelo páginas de empresas distintas y exigiendo las decisiones antes del turno siguiente. Menos iteraciones, menos tokens y menor latencia por job.
+- Ampliar la evaluación: más sectores y casos, ejecución en CI ante cada cambio de prompt, búsquedas reales periódicas y métricas de costo por lead.
+- Observabilidad del LLM: el consumo de tokens ya se mide por job; falta traducirlo a costo, medir la latencia por paso y exportarlo a métricas (CloudWatch).
+
+*Escalabilidad y resiliencia*
+
+- Rate limits y reintentos con backoff hacia el LLM y la búsqueda; concurrencia controlada por cola.
+- Optimización del cold start de NestJS en Lambda (bundle con esbuild, provisioned concurrency si aplica).
+- IaC (AWS SAM / CDK), CI/CD y entornos.
+
+*Datos y cumplimiento*
+
 - Scraping profundo: proxies, rotación, respeto de `robots.txt`, render de JS.
 - Enriquecimiento con fuentes adicionales (Google Places, LinkedIn, SUNAT/RUC).
-- Cumplimiento de Ley 29733 (datos personales), base legal y retención de datos.
 - Deduplicación avanzada (fuzzy matching por nombre/dirección).
-- Ampliar la evaluación: más sectores y casos, ejecución periódica sobre búsquedas reales y métricas de costo por lead.
-- Observabilidad del LLM: el consumo de tokens ya se mide por job; falta traducirlo a costo, medir latencia por paso y exportarlo a métricas (CloudWatch).
-- Optimización de cold start de NestJS en Lambda (bundle con esbuild, provisioned concurrency si aplica).
+- Cumplimiento de la Ley 29733 (datos personales), base legal y retención de datos.
+
+*Producto*
+
 - Frontend para el equipo comercial (listado, filtros por score, exportación).
-- IaC (AWS SAM / CDK), CI/CD y entornos.
