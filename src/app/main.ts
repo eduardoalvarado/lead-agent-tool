@@ -1,22 +1,17 @@
 import 'reflect-metadata';
-import { NestFactory } from '@nestjs/core';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { AppModule } from './app.module.js';
+import type { Server } from 'node:http';
+import type { AppConfig } from './config/app-config.js';
+import { createHttpApp } from './http-app.factory.js';
+import { APP_CONFIG } from './providers/tokens.js';
 
-const DEFAULT_PORT = 3000;
-const SWAGGER_PATH = 'docs';
+// El endpoint es síncrono en la PoC y una ejecución del agente puede tardar minutos:
+// se amplía el timeout por defecto de Node (5 min) para no cortar la respuesta.
+const AGENT_REQUEST_TIMEOUT_MS = 15 * 60 * 1000;
 
-async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
-
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('Lead Agent API')
-    .setDescription('Agente IA para extracción y cualificación de leads B2B')
-    .setVersion('0.1.0')
-    .build();
-  SwaggerModule.setup(SWAGGER_PATH, app, () => SwaggerModule.createDocument(app, swaggerConfig));
-
-  await app.listen(Number(process.env.PORT ?? DEFAULT_PORT));
-}
-
-await bootstrap();
+const app = await createHttpApp();
+(app.getHttpServer() as Server).requestTimeout = AGENT_REQUEST_TIMEOUT_MS;
+const { PORT } = app.get<AppConfig>(APP_CONFIG);
+await app.listen(PORT);
+process.stdout.write(
+  `API en http://localhost:${PORT} · Swagger en http://localhost:${PORT}/docs\n`,
+);
