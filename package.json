@@ -19,11 +19,15 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "format:check": "prettier --check .",
-    "smoke": "node --env-file-if-exists=.env --import tsx scripts/smoke-agent.ts"
+    "smoke": "node --env-file-if-exists=.env --import tsx scripts/smoke-agent.ts",
+    "db:init": "node --env-file-if-exists=.env --import tsx scripts/db-init.ts",
+    "test:integration": "RUN_INTEGRATION=1 vitest run tests/integration"
   },
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^1.1.2",
     "@anthropic-ai/sdk": "^1.11.0",
+    "@aws-sdk/client-dynamodb": "^3.1173.0",
+    "@aws-sdk/lib-dynamodb": "^3.1173.0",
     "@nestjs/common": "^12.5.1",
     "@nestjs/core": "^12.5.1",
     "@nestjs/platform-express": "^12.5.1",

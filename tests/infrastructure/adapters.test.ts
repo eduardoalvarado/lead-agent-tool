@@ -8,7 +8,7 @@ import {
 } from '../../src/infrastructure/llm/groq-message.mapper.js';
 import { InMemoryLeadRepository } from '../../src/infrastructure/persistence/in-memory-lead-repository.js';
 import { MockSearchProvider } from '../../src/infrastructure/search/mock-search-provider.js';
-import { buildCandidate } from '../support/fakes.js';
+import { buildLead } from '../support/lead-fixtures.js';
 
 describe('MockSearchProvider', () => {
   const provider = new MockSearchProvider();
@@ -92,17 +92,9 @@ describe('Groq message mapper', () => {
 describe('InMemoryLeadRepository', () => {
   it('deduplica por id', async () => {
     const repository = new InMemoryLeadRepository();
-    const lead = {
-      ...buildCandidate(),
-      id: 'sonrisaclara.pe',
-      requestedSector: 'Clínicas dentales',
-      location: 'Lima',
-      jobId: 'job-1',
-      createdAt: '2026-11-20T10:00:00.000Z',
-    };
 
-    expect(await repository.save(lead)).toBe('created');
-    expect(await repository.save(lead)).toBe('duplicate');
+    expect(await repository.save(buildLead())).toBe('created');
+    expect(await repository.save(buildLead())).toBe('duplicate');
     expect(await repository.findAll()).toHaveLength(1);
   });
 });
