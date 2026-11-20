@@ -20,12 +20,14 @@ export interface OpenAICompatibleProviderOptions {
   readonly model: string;
   readonly timeoutMs: number;
   readonly maxRetries: number;
+  /**
+   * Temperatura (0 = extracción determinista). Opcional porque algunos modelos rechazan el
+   * parámetro (p. ej. Claude actuales): si no se define, no se envía.
+   */
+  readonly temperature?: number;
   /** Parámetros propios del proveedor (p. ej. `include_reasoning` en Groq). */
   readonly extraParams?: Readonly<Record<string, unknown>>;
 }
-
-// Temperatura 0: extracción determinista, menos variación y menos alucinación.
-const TEMPERATURE = 0;
 
 /**
  * Cualquier LLM con API compatible con OpenAI Chat Completions + tool calling:
@@ -47,7 +49,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     const params: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming = {
       ...this.options.extraParams,
       model: this.options.model,
-      temperature: TEMPERATURE,
+      ...(this.options.temperature !== undefined && { temperature: this.options.temperature }),
       messages: messages.map(toApiMessage),
       tools: tools.map(toApiTool),
       tool_choice: 'auto',

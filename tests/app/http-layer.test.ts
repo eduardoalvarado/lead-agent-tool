@@ -87,9 +87,26 @@ describe('resolveOpenAICompatibleOptions', () => {
     });
   });
 
-  it('no envía parámetros extra si el preset no los define', () => {
+  it('no envía parámetros extra ni temperatura si el preset no los define', () => {
     const options = resolveOpenAICompatibleOptions(loadAppConfig({ LLM_PROVIDER: 'ollama' }), {});
 
     expect(options).not.toHaveProperty('extraParams');
+    expect(options).not.toHaveProperty('temperature');
+  });
+
+  it('usa la temperatura del preset y LLM_TEMPERATURE la sobrescribe', () => {
+    const withPreset = { ...preset, temperature: 0 };
+
+    expect(
+      resolveOpenAICompatibleOptions(loadAppConfig({ LLM_API_KEY: 'k' }), withPreset),
+    ).toMatchObject({
+      temperature: 0,
+    });
+    expect(
+      resolveOpenAICompatibleOptions(
+        loadAppConfig({ LLM_API_KEY: 'k', LLM_TEMPERATURE: '0.3' }),
+        withPreset,
+      ),
+    ).toMatchObject({ temperature: 0.3 });
   });
 });

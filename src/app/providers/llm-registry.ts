@@ -21,6 +21,7 @@ export interface OpenAICompatiblePreset {
   readonly model?: string;
   readonly apiKey?: string;
   readonly reasoningEffort?: AppConfig['LLM_REASONING_EFFORT'];
+  readonly temperature?: number;
   readonly extraParams?: Readonly<Record<string, unknown>>;
 }
 
@@ -30,6 +31,7 @@ export function resolveOpenAICompatibleOptions(
   preset: OpenAICompatiblePreset,
 ): OpenAICompatibleProviderOptions {
   const reasoningEffort = config.LLM_REASONING_EFFORT ?? preset.reasoningEffort;
+  const temperature = config.LLM_TEMPERATURE ?? preset.temperature;
   const extraParams = {
     ...preset.extraParams,
     ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
@@ -40,6 +42,7 @@ export function resolveOpenAICompatibleOptions(
     apiKey: config.LLM_API_KEY ?? preset.apiKey ?? '',
     timeoutMs: config.LLM_TIMEOUT_MS,
     maxRetries: config.LLM_MAX_RETRIES,
+    ...(temperature !== undefined && { temperature }),
     ...(Object.keys(extraParams).length > 0 && { extraParams }),
   };
 }
@@ -61,6 +64,8 @@ export const LLM_ADAPTERS: Readonly<Record<AppConfig['LLM_PROVIDER'], LlmAdapter
   groq: openAICompatible({
     baseURL: 'https://api.groq.com/openai/v1',
     model: 'openai/gpt-oss-120b',
+    // Temperatura 0: extracción determinista, menos variación y menos alucinación.
+    temperature: 0,
     // Razonamiento corto: menos tokens por paso (cuentan para los límites del free tier).
     reasoningEffort: 'low',
     // Extensiones de Groq: razonamiento visible en los logs y tool calls en paralelo.
@@ -69,9 +74,11 @@ export const LLM_ADAPTERS: Readonly<Record<AppConfig['LLM_PROVIDER'], LlmAdapter
   ollama: openAICompatible({
     baseURL: 'http://localhost:11434/v1',
     model: 'qwen3:8b',
+    temperature: 0,
     // Ollama no valida la key, pero el cliente exige una.
     apiKey: 'ollama',
   }),
+  // Sin defaults: URL, modelo, key y (opcional) temperatura vienen de la configuración.
   'openai-compatible': openAICompatible({}),
   bedrock: {
     compactObservations: false,

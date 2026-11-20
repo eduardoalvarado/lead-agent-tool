@@ -21,6 +21,9 @@ export const AppConfigSchema = z
     LLM_BASE_URL: z.url().optional(),
     // Esfuerzo de razonamiento (modelos que lo admiten, p. ej. gpt-oss): menos esfuerzo = menos tokens.
     LLM_REASONING_EFFORT: z.enum(['low', 'medium', 'high']).optional(),
+    // Temperatura: algunos modelos (p. ej. Claude actuales) rechazan el parámetro; si no se define
+    // y el preset no la fija, no se envía.
+    LLM_TEMPERATURE: z.coerce.number().min(0).max(2).optional(),
     AWS_REGION: z.string().min(1).default('us-east-2'),
     BEDROCK_MODEL: z.string().min(1).default('anthropic.claude-haiku-5-5'),
     BEDROCK_EFFORT: z.enum(['low', 'medium', 'high']).default('medium'),

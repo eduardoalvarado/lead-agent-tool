@@ -60,7 +60,7 @@ src/app/             NestJS: config, módulos, controllers, providers/tokens, ma
 - Tools: `search_web(query)`, `fetch_page(url)` (opcional, contenido truncado), `save_lead(lead)`, `discard_lead(companyName, url, reason)`.
 - Guardas de flujo en código (`CandidateLedger`): no se busca de nuevo con resultados sin decidir ni se lee otra empresa con una leída sin decidir.
 - `save_lead` valida con el schema Zod de `core/domain`; si falla, devuelve el error como resultado del tool para que el LLM corrija (no lanzar excepción).
-- Guardas: `AGENT_MAX_ITERATIONS` (default 20), `AGENT_MAX_LEADS` (default 10), timeout por llamada. Determinismo: temperatura 0 donde el modelo lo admite (APIs compatibles con OpenAI); los modelos actuales de Claude no aceptan `temperature`, se usa `effort` + reglas del prompt.
+- Guardas: `AGENT_MAX_ITERATIONS` (default 20), `AGENT_MAX_LEADS` (default 10), timeout por llamada. Determinismo: temperatura 0 en los presets `groq`/`ollama`, configurable con `LLM_TEMPERATURE` y omitida si no se define (los Claude actuales la rechazan); los modelos actuales de Claude no aceptan `temperature`, se usa `effort` + reglas del prompt.
 - Loguear cada paso del razonamiento (tool elegido, argumentos, resumen del resultado) a través del puerto `Logger`; es parte de la demo.
 - El agente termina con un resumen: leads guardados, descartados y motivo.
 

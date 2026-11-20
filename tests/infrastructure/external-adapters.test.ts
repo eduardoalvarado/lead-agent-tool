@@ -41,6 +41,7 @@ describe('OpenAICompatibleProvider', () => {
     model: 'm',
     timeoutMs: 1,
     maxRetries: 0,
+    temperature: 0,
     extraParams: { include_reasoning: true },
   });
 
@@ -96,6 +97,20 @@ describe('OpenAICompatibleProvider', () => {
       tool_choice: 'auto',
       include_reasoning: true,
     });
+  });
+  it('no envía temperature si no está configurada (modelos que la rechazan)', async () => {
+    const claude = new OpenAICompatibleProvider({
+      baseURL: 'https://openrouter.ai/api/v1',
+      apiKey: 'k',
+      model: 'anthropic/claude-haiku-5.5',
+      timeoutMs: 1,
+      maxRetries: 0,
+    });
+    sdk.chatCreate.mockReturnValue(Promise.resolve({ choices: [{ message: { content: 'ok' } }] }));
+
+    await claude.complete(request);
+
+    expect(sdk.chatCreate.mock.calls[0]?.[0]).not.toHaveProperty('temperature');
   });
 });
 
