@@ -68,8 +68,6 @@ Beneficios: el agente se testea sin levantar Nest, el framework y el LLM son ree
 
 ![PoC implementada](docs/architecture-poc.png)
 
-**Flujo del agente:** diagrama de actividades del bucle ReAct, interactivo y animado: [ver en vivo](https://eduardoalvarado.github.io/lead-agent-tool/agent-activity.html) (fuente: [`docs/agent-activity.html`](docs/agent-activity.html)).
-
 ### 3.2 Producción en AWS (propuesta)
 
 ![Arquitectura de producción en AWS](docs/architecture.png)

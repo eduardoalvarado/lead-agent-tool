@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Lead Agent · Diagramas</title>
+    <title>Lead Agent · Arquitectura</title>
     <meta
       name="description"
-      content="Diagramas interactivos del Lead Agent: arquitectura (PoC y producción en AWS) y actividades del bucle ReAct."
+      content="Diagramas interactivos de arquitectura del Lead Agent: la PoC en local y la propuesta de producción en AWS."
     />
     <style>
       :root {
@@ -103,36 +103,36 @@
   </head>
   <body>
     <main>
-      <h1>Lead Agent · Diagramas</h1>
+      <h1>Lead Agent · Arquitectura</h1>
       <p class="lead">
         Agente IA que busca empresas por sector y ubicación, extrae y cualifica sus datos con un LLM
         y los guarda en DynamoDB. Los diagramas son interactivos: elige un paso o reprodúcelo.
       </p>
       <div class="grid">
-        <a class="card" href="architecture.html">
+        <a class="card" href="architecture.html?mode=prod">
           <img
             src="architecture.png"
             alt="Arquitectura de producción propuesta en AWS"
             width="1500"
             height="690"
           />
-          <h2>Arquitectura</h2>
+          <h2>Producción en AWS (propuesta)</h2>
           <p>
-            Producción propuesta en AWS (2 Lambdas, SQS, DynamoDB, Bedrock) y la PoC implementada,
-            con el flujo animado paso a paso.
+            Flujo asíncrono con 2 Lambdas (api y agent-worker), SQS con DLQ, DynamoDB y Claude en
+            Amazon Bedrock, paso a paso.
           </p>
         </a>
-        <a class="card" href="agent-activity.html">
+        <a class="card" href="architecture.html?mode=poc">
           <img
-            src="agent-activity.png"
-            alt="Diagrama de actividades del bucle ReAct del agente"
+            src="architecture-poc.png"
+            alt="Arquitectura de la PoC ejecutada en local"
             width="1500"
-            height="690"
+            height="640"
           />
-          <h2>Actividades del agente</h2>
+          <h2>PoC en local (implementada)</h2>
           <p>
-            Bucle ReAct: el LLM razona, elige un tool, observa el resultado y repite hasta terminar;
-            guardas y cortes controlados.
+            Lo que corre hoy: API NestJS con app web y Swagger, CLI, el agente ReAct y DynamoDB
+            Local en Docker.
           </p>
         </a>
       </div>

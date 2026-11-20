@@ -565,8 +565,8 @@
                 y: row[3],
                 cat: 'obs',
                 icon: 'pulse',
-                title: 'CloudWatch + X-Ray',
-                sub: 'logs · trazas',
+                title: 'CloudWatch',
+                sub: 'logs · trazas X-Ray',
               },
               {
                 id: 'tavily',
@@ -752,7 +752,7 @@
               {
                 title: 'Consumo controlado',
                 nodes: ['sqs', 'worker'],
-                text: 'SQS invoca al worker con lotes de 1 mensaje. El worker es la única pieza nueva: un handler que llama al mismo SearchLeadsUseCase.',
+                text: 'SQS invoca al worker con lotes de 1 mensaje. El worker es un handler nuevo que llama al mismo SearchLeadsUseCase.',
                 points: [
                   'La concurrencia reservada de la Lambda es el techo real de llamadas simultáneas al LLM y a Tavily (sus rate limits).',
                   'Visibilidad de la cola mayor que el timeout de la Lambda (15 min) para no duplicar trabajo.',
@@ -782,7 +782,7 @@
                 text: 'save_lead valida con Zod y guarda con escritura condicional por dominio.',
                 points: [
                   'attribute_not_exists(id): un dominio nunca se duplica, ni entre ejecuciones simultáneas.',
-                  'Al terminar, el job pasa a DONE con el resumen (guardados, descartados y motivo).',
+                  'Al terminar, el job queda completado con el resumen (guardados, descartados y motivo).',
                 ],
               },
               {
@@ -855,8 +855,8 @@
                 y: row[1],
                 cat: 'ext',
                 icon: 'user',
-                title: 'Swagger / curl',
-                sub: 'localhost:3000/docs',
+                title: 'Navegador / curl',
+                sub: 'app web · Swagger',
               },
               {
                 id: 'terminal',
@@ -948,7 +948,7 @@
                 cat: 'ai',
                 icon: 'spark',
                 title: 'Groq',
-                sub: 'por defecto · API OpenAI',
+                sub: 'LLM por defecto',
               },
               {
                 id: 'bedrock',
@@ -1080,8 +1080,9 @@
               {
                 title: 'Entrada (HTTP o CLI)',
                 nodes: ['swagger', 'terminal', 'controller', 'cli'],
-                text: 'El evaluador prueba la API desde Swagger o ejecuta el agente desde la terminal.',
+                text: 'El evaluador usa la app web local, Swagger o curl, o ejecuta el agente desde la terminal.',
                 points: [
+                  'La app web (public/index.html) la sirve el mismo servidor en localhost:3000; Swagger, en /docs.',
                   'POST /leads/search es síncrono en la PoC: responde cuando el agente termina.',
                   'La CLI levanta el mismo módulo Nest sin servidor HTTP.',
                 ],
@@ -1132,7 +1133,7 @@
               {
                 title: 'Implementado',
                 items: [
-                  'API Nest + Swagger, CLI y handler Lambda',
+                  'API Nest + Swagger, app web local, CLI y handler Lambda',
                   'Agente ReAct con 4 tools y guardas',
                   'DynamoDB Local con dedupe por dominio',
                 ],
