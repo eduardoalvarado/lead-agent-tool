@@ -135,8 +135,8 @@ La regla de dependencias entre capas se hace cumplir dos veces, con una sola fue
 | Lenguaje | TypeScript estricto, ESM | Tipado end-to-end. ESM porque NestJS 12 se distribuye solo como ESM. |
 | Framework | NestJS 12 (solo capa exterior) | Módulos y DI expresan la separación de capas; el núcleo queda agnóstico. Trade-off: cold start en Lambda (ver limitaciones). |
 | Agente | Bucle ReAct propio sobre tool calling (`LeadAgent`) | Control total y transparente del razonamiento; guardas deterministas en código; sin la caja negra de un framework. Alternativa: LangGraph.js. |
-| LLM (PoC) | Groq · `openai/gpt-oss-120b`, vía `OpenAICompatibleProvider` | Gratis y rápido. Elegido tras probar: `llama-3.3-70b-versatile` ya no está disponible y `qwen3.8-27b` ignoraba los resultados de los tools. El mismo adaptador sirve para Ollama (local) u otros proveedores compatibles con OpenAI, solo cambiando la configuración. |
-| LLM (producción) | Claude vía Amazon Bedrock (`BedrockProvider`) | IAM en lugar de API keys, datos dentro de AWS, facturación y monitoreo centralizados (clave en fintech). Modelo configurable (`BEDROCK_MODEL`, por defecto `anthropic.claude-haiku-5-5`). |
+| LLM (PoC) | Groq · `openai/gpt-oss-120b` por defecto, vía `OpenAICompatibleProvider` | Gratis, para que cualquiera pueda ejecutar la PoC. Elegido por descarte entre los modelos gratuitos disponibles (`llama-3.3-70b-versatile` ya no existe y `qwen3.8-27b` ignoraba los resultados de los tools), no por ser el mejor. El mismo adaptador sirve para Ollama, OpenRouter u otros proveedores compatibles, solo con configuración. |
+| LLM (producción) | Claude vía Amazon Bedrock (`BedrockProvider`) | IAM en lugar de API keys, datos dentro de AWS, facturación y monitoreo centralizados (clave en fintech). Modelo configurable (`BEDROCK_MODEL`, por defecto `anthropic.claude-haiku-5-5`). Ese mismo modelo se evaluó vía OpenRouter (ver 7.1): cuesta prácticamente lo mismo que `gpt-oss-120b` y resolvió los casos dorados sin errores de selección ni alucinaciones. |
 | Búsqueda | Tavily + `MockSearchProvider` | Tavily devuelve contenido limpio para LLMs; el mock permite demos y tests sin key ni red. |
 | Validación | Zod | Un solo esquema para el output del LLM (y el JSON Schema de los tools), el entorno y los requests. |
 | Base de datos | DynamoDB (Local en Docker) | Coherente con el diseño serverless; PK = dominio con escritura condicional para deduplicar de forma atómica. Detrás de `LeadRepository`. |
@@ -249,6 +249,27 @@ El system prompt está en `src/core/agent/prompts/`, separado por responsabilida
 - **Eficiencia de tokens:** como el historial se reenvía en cada llamada, el costo crece con las iteraciones; por eso se acotan las observaciones (extractos de 300 caracteres, páginas de 1.500), se compactan las antiguas con proveedores de cuota baja, el razonamiento usa esfuerzo bajo en Groq y el prefijo (system prompt + tools) se mantiene estable para aprovechar la caché de prefijo donde exista.
 - **Medición de calidad:** `npm run eval` (o `npm run eval -- --case dental-lima`) ejecuta el agente sobre casos dorados del dataset mock y reporta precisión, recall, trampas guardadas/descartadas y alucinaciones (cada email, teléfono o dirección guardado debe aparecer en la fuente).
 
+### 7.1 Resultados de la evaluación
+
+Ejecución de `npm run eval` del 2026-11-20 con **Claude Haiku 5.5** (`anthropic/claude-haiku-5.5` vía OpenRouter, `LLM_PROVIDER=openai-compatible`, esfuerzo de razonamiento `medium`) sobre los casos dorados del dataset mock (6 leads válidos y 7 trampas):
+
+| Caso | Precisión | Recall | Trampas guardadas | Trampas descartadas | Alucinaciones | Iteraciones | Tokens (entrada / salida) |
+|---|---|---|---|---|---|---|---|
+| Agencias de marketing · Lima | 100 % | 100 % | 0 | 4 de 4 | 0 | 7 | 38.877 / 4.507 |
+| Clínicas dentales · Lima | 100 % | 100 % | 0 | 3 de 3 | 0 | 7 | 36.080 / 3.885 |
+
+- Guardó los 6 leads válidos y descartó explícitamente las 7 trampas (directorios, una academia de cursos, empresas de Arequipa y Cusco, negocios solo con Instagram o Facebook), cada una con su motivo.
+- Cero alucinaciones: todo email, teléfono y dirección guardado aparece en la fuente; cuando un dato no estaba publicado, guardó `null`.
+- Cerró por sí mismo al alcanzar los leads del caso (`max_leads`) en 7 iteraciones, lejos del límite de 20.
+- Consumo total: 83.349 tokens en 14 llamadas al LLM (alrededor de 1 centavo de dólar a precios de OpenRouter).
+- Ejemplo de cualificación (Clínica Dental Sonrisa Clara, 95): *"encaje 35, web propia con dirección 25, teléfono y email publicados 25, 2 sedes (5) y 12 especialistas (5)"*.
+
+Observaciones de la misma ejecución:
+
+- **Aritmética de la rúbrica:** en 1 de 6 leads el modelo sumó mal un criterio (contactabilidad 10 en lugar de 15 con teléfono y dirección). Mejora prevista: que el LLM entregue el desglose por criterio y el código calcule el total.
+- **Guardas y paralelismo:** Claude emite varios tool calls por turno; las guardas de flujo (pensadas para modelos que posponen decisiones) bloquean la segunda búsqueda o lectura simultánea. El agente se recupera en la iteración siguiente, a costa de alguna llamada extra.
+- El dataset mock tiene 2 sectores: los resultados validan el comportamiento del agente y del prompt, no su rendimiento sobre búsquedas reales.
+
 ---
 
 ## 8. Limitaciones y mejoras futuras
@@ -257,7 +278,8 @@ El system prompt está en `src/core/agent/prompts/`, separado por responsabilida
 
 - **Flujo asíncrono no implementado:** el endpoint es síncrono y puede tardar minutos; falta el worker SQS, el registro de jobs y `GET /jobs/{id}` (ver 3.2).
 - **LLM en free tier:** Groq limita a 8.000 tokens/minuto y 200.000 tokens/día; por eso se compactan las observaciones antiguas del historial y las ejecuciones reales por día son pocas. La cuenta AWS disponible tiene cuota 0 en Bedrock (no ajustable desde la consola) y Claude además exige autorización de Anthropic.
-- **Modelo open source:** `gpt-oss-120b` emite un tool call por turno y tiende a postergar decisiones; las guardas de flujo lo compensan, pero un modelo con tool calling paralelo (Claude) necesitaría menos iteraciones.
+- **Modelo por defecto:** `gpt-oss-120b` (gratis en Groq) emite un tool call por turno y tiende a postergar decisiones; las guardas de flujo lo compensan. Claude Haiku 5.5 resolvió la evaluación en 7 iteraciones por caso (ver 7.1).
+- **Puntaje calculado por el LLM:** la suma de la rúbrica la hace el modelo y puede equivocarse (1 de 6 leads en la evaluación); falta calcularla en código a partir del desglose.
 - **Dataset mock:** cubre dos sectores (agencias de marketing y clínicas dentales en Lima); otros sectores devuelven cero resultados en modo mock.
 - **Lectura de páginas simple:** conversión HTML → texto sin render de JavaScript.
 - **Listado con `Scan`:** `GET /leads` recorre la tabla; en producción, índices por `jobId` o fecha.
