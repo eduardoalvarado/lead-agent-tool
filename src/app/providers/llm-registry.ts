@@ -1,6 +1,9 @@
 import type { LLMProvider } from '../../core/ports/llm-provider.js';
 import { BedrockProvider } from '../../infrastructure/llm/bedrock-provider.js';
-import { OpenAICompatibleProvider } from '../../infrastructure/llm/openai-compatible-provider.js';
+import {
+  OpenAICompatibleProvider,
+  type OpenAICompatibleProviderOptions,
+} from '../../infrastructure/llm/openai-compatible-provider.js';
 import type { AppConfig } from '../config/app-config.js';
 
 export interface LlmAdapterRegistration {
@@ -13,26 +16,39 @@ export interface LlmAdapterRegistration {
   readonly compactObservations: boolean;
 }
 
-interface OpenAICompatiblePreset {
+export interface OpenAICompatiblePreset {
   readonly baseURL?: string;
   readonly model?: string;
   readonly apiKey?: string;
+  readonly reasoningEffort?: AppConfig['LLM_REASONING_EFFORT'];
   readonly extraParams?: Readonly<Record<string, unknown>>;
 }
 
-/** Un preset fija valores por defecto; `LLM_BASE_URL`, `LLM_MODEL` y `LLM_API_KEY` los sobrescriben. */
+/** Combina el preset con la configuración: las variables `LLM_*` sobrescriben los defaults. */
+export function resolveOpenAICompatibleOptions(
+  config: AppConfig,
+  preset: OpenAICompatiblePreset,
+): OpenAICompatibleProviderOptions {
+  const reasoningEffort = config.LLM_REASONING_EFFORT ?? preset.reasoningEffort;
+  const extraParams = {
+    ...preset.extraParams,
+    ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
+  };
+  return {
+    baseURL: config.LLM_BASE_URL ?? preset.baseURL ?? '',
+    model: config.LLM_MODEL ?? preset.model ?? '',
+    apiKey: config.LLM_API_KEY ?? preset.apiKey ?? '',
+    timeoutMs: config.LLM_TIMEOUT_MS,
+    maxRetries: config.LLM_MAX_RETRIES,
+    ...(Object.keys(extraParams).length > 0 && { extraParams }),
+  };
+}
+
 function openAICompatible(preset: OpenAICompatiblePreset): LlmAdapterRegistration {
   return {
     compactObservations: true,
     create: (config) =>
-      new OpenAICompatibleProvider({
-        baseURL: config.LLM_BASE_URL ?? preset.baseURL ?? '',
-        model: config.LLM_MODEL ?? preset.model ?? '',
-        apiKey: config.LLM_API_KEY ?? preset.apiKey ?? '',
-        timeoutMs: config.LLM_TIMEOUT_MS,
-        maxRetries: config.LLM_MAX_RETRIES,
-        ...(preset.extraParams && { extraParams: preset.extraParams }),
-      }),
+      new OpenAICompatibleProvider(resolveOpenAICompatibleOptions(config, preset)),
   };
 }
 
@@ -45,6 +61,8 @@ export const LLM_ADAPTERS: Readonly<Record<AppConfig['LLM_PROVIDER'], LlmAdapter
   groq: openAICompatible({
     baseURL: 'https://api.groq.com/openai/v1',
     model: 'openai/gpt-oss-120b',
+    // Razonamiento corto: menos tokens por paso (cuentan para los límites del free tier).
+    reasoningEffort: 'low',
     // Extensiones de Groq: razonamiento visible en los logs y tool calls en paralelo.
     extraParams: { include_reasoning: true, parallel_tool_calls: true },
   }),

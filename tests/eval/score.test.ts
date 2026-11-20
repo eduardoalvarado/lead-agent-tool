@@ -29,6 +29,7 @@ function summary(overrides: Partial<AgentRunSummary>): AgentRunSummary {
     stopReason: 'completed',
     finalMessage: null,
     error: null,
+    usage: { llmCalls: 3, inputTokens: 0, outputTokens: 0 },
     ...overrides,
   };
 }

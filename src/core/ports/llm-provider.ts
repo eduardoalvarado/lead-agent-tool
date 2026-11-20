@@ -29,6 +29,12 @@ export interface LlmCompletionRequest {
   readonly tools: readonly ToolDefinition[];
 }
 
+/** Tokens informados por el proveedor para una llamada (base del costo y de los rate limits). */
+export interface TokenUsage {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+}
+
 export interface LlmCompletion {
   readonly content: string | null;
   /** Razonamiento interno del modelo (modelos de razonamiento); solo para trazabilidad. */
@@ -36,6 +42,8 @@ export interface LlmCompletion {
   readonly toolCalls: readonly ToolCall[];
   /** Estado opaco que el adaptador necesita recibir de vuelta en el historial. El núcleo no lo interpreta. */
   readonly providerState?: unknown;
+  /** Ausente si el proveedor no informa el consumo. */
+  readonly usage?: TokenUsage;
 }
 
 /** Puerto del LLM. Temperatura, modelo y timeout son responsabilidad del adaptador. */

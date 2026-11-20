@@ -172,7 +172,12 @@ describe('LeadAgent', () => {
 
   it('compacta las observaciones antiguas y conserva completas las recientes', async () => {
     const longSearch: SearchProvider = {
-      search: async () => [{ title: 'T', url: 'https://a.pe', content: 'x'.repeat(490) }],
+      search: async () =>
+        ['a', 'b', 'c'].map((id) => ({
+          title: 'T',
+          url: `https://${id}.pe`,
+          content: 'x'.repeat(290),
+        })),
     };
     const discardA = { companyName: 'A', url: 'https://a.pe', reason: 'Otro sector' };
     const { agent, llm } = setup(
@@ -205,6 +210,21 @@ describe('LeadAgent', () => {
     expect(llm.requests[1]?.messages.at(-1)?.content).toContain('sonrisaclara.pe');
   });
 
+  it('suma el consumo de tokens informado por el proveedor', async () => {
+    const withUsage = (completion: LlmCompletion, input: number, output: number) => ({
+      ...completion,
+      usage: { inputTokens: input, outputTokens: output },
+    });
+    const { agent } = setup([
+      withUsage(callTools(toolCall('search_web', { query: 'dentistas Lima' })), 1000, 50),
+      answer('Fin.'),
+    ]);
+
+    const summary = await agent.run(criteria, 'job-1');
+
+    expect(summary.usage).toEqual({ llmCalls: 2, inputTokens: 1000, outputTokens: 50 });
+  });
+
   it('avisa una sola vez al LLM cuando quedan 2 respuestas', async () => {
     const search = (n: number) =>
       callTools(
@@ -225,7 +245,7 @@ describe('LeadAgent', () => {
       (m) => m.role === 'user' && m.content.startsWith('AVISO DEL SISTEMA'),
     );
     expect(notices).toHaveLength(1);
-    expect(notices[0]?.content).toContain('te quedan 2 respuestas');
+    expect(notices[0]?.content).toContain('te quedan 2 respuestas antes del límite de iteraciones');
   });
 
   it('se detiene al alcanzar el máximo de iteraciones', async () => {

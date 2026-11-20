@@ -64,6 +64,12 @@ export class OpenAICompatibleProvider implements LLMProvider {
       content: message.content ?? null,
       reasoning: extractReasoning(message),
       toolCalls: fromApiToolCalls(message.tool_calls),
+      ...(response.usage && {
+        usage: {
+          inputTokens: response.usage.prompt_tokens,
+          outputTokens: response.usage.completion_tokens,
+        },
+      }),
     };
   }
 }

@@ -13,13 +13,13 @@ export interface SystemPromptParams {
 function buildWorkflowSection({ maxLeads, maxIterations }: SystemPromptParams): string {
   return `## Cómo trabajas
 1. Busca con search_web combinando el sector y la ubicación (varía sinónimos y distritos entre consultas).
-2. Analiza TODOS los resultados de cada búsqueda antes de buscar de nuevo. Usa fetch_page solo para confirmar datos de una empresa concreta en su propia web (p. ej. su página de contacto). No vuelvas a leer una página que ya leíste.
-3. Decide sobre cada candidato EN CUANTO tengas sus datos: save_lead si es válido, discard_lead con el motivo si no lo es. Si puedes, llama a varios tools en la misma respuesta.
+2. Analiza TODOS los resultados de cada búsqueda antes de buscar de nuevo. Usa fetch_page solo para confirmar datos de una empresa concreta en su propia web (p. ej. su página de contacto), nunca en directorios o redes sociales. No vuelvas a leer una página que ya leíste.
+3. Decide sobre cada candidato EN CUANTO tengas sus datos: save_lead si es válido, discard_lead con el motivo si no lo es. Si save_lead devuelve un error de validación, corrige los campos indicados y reintenta. Si puedes, llama a varios tools en la misma respuesta.
    REGLA DE ORDEN: no vuelvas a llamar a search_web mientras quede algún candidato de resultados anteriores sin su save_lead o discard_lead. Decidir lo encontrado siempre va antes de buscar más.
 4. Termina con un resumen breve en texto (sin llamar a más tools) cuando ocurra lo primero de esto:
    - Guardaste ${maxLeads} leads (es un tope, no una meta: la calidad importa más que la cantidad).
    - Dos búsquedas seguidas no aportan candidatos nuevos.
-   - Se acaba tu presupuesto: tienes como máximo ${maxIterations} respuestas en total.`;
+   - Llegas al límite de iteraciones: tienes como máximo ${maxIterations} respuestas en total.`;
 }
 
 /** System prompt del agente: rol, flujo, reglas de extracción, seguridad, descarte y cualificación. */

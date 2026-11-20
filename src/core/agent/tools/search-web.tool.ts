@@ -12,7 +12,7 @@ export interface SearchWebToolOptions {
 
 export const DEFAULT_SEARCH_WEB_OPTIONS: SearchWebToolOptions = {
   maxResults: 5,
-  maxSnippetChars: 500,
+  maxSnippetChars: 300,
 };
 
 const NO_NEW_RESULTS_MESSAGE =
@@ -31,7 +31,7 @@ export class SearchWebTool extends ZodTool<typeof SearchWebArgsSchema> {
   protected readonly name = 'search_web';
 
   protected readonly description =
-    'Busca en internet y devuelve hasta 5 resultados (título, URL y extracto). Omite los resultados que ya viste en esta ejecución. Se bloquea si quedan candidatos de búsquedas anteriores sin save_lead o discard_lead.';
+    'Busca empresas en internet: hasta 5 resultados nuevos (título, URL, extracto).';
 
   protected readonly schema = SearchWebArgsSchema;
 

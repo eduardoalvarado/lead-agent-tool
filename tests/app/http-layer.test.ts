@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { httpStatusFor } from '../../src/app/common/domain-exception.filter.js';
 import { ZodValidationPipe } from '../../src/app/common/zod-validation.pipe.js';
 import { loadAppConfig } from '../../src/app/config/app-config.js';
-import { LLM_ADAPTERS } from '../../src/app/providers/llm-registry.js';
+import {
+  LLM_ADAPTERS,
+  resolveOpenAICompatibleOptions,
+} from '../../src/app/providers/llm-registry.js';
 import { InvalidSearchCriteriaError } from '../../src/core/domain/errors/invalid-search-criteria.error.js';
 import { LlmProviderError } from '../../src/core/domain/errors/llm-provider.error.js';
 import { PersistenceError } from '../../src/core/domain/errors/persistence.error.js';
@@ -50,5 +53,43 @@ describe('LLM_ADAPTERS', () => {
   it('solo compacta el historial con proveedores que lo toleran', () => {
     expect(LLM_ADAPTERS.groq.compactObservations).toBe(true);
     expect(LLM_ADAPTERS.bedrock.compactObservations).toBe(false);
+  });
+});
+
+describe('resolveOpenAICompatibleOptions', () => {
+  const preset = {
+    baseURL: 'https://api.groq.com/openai/v1',
+    model: 'm',
+    reasoningEffort: 'low' as const,
+  };
+
+  it('aplica los defaults del preset, incluido el esfuerzo de razonamiento', () => {
+    const options = resolveOpenAICompatibleOptions(loadAppConfig({ LLM_API_KEY: 'k' }), preset);
+
+    expect(options).toMatchObject({
+      baseURL: 'https://api.groq.com/openai/v1',
+      model: 'm',
+      apiKey: 'k',
+      extraParams: { reasoning_effort: 'low' },
+    });
+  });
+
+  it('las variables LLM_* sobrescriben el preset', () => {
+    const config = loadAppConfig({
+      LLM_API_KEY: 'k',
+      LLM_MODEL: 'otro',
+      LLM_REASONING_EFFORT: 'high',
+    });
+
+    expect(resolveOpenAICompatibleOptions(config, preset)).toMatchObject({
+      model: 'otro',
+      extraParams: { reasoning_effort: 'high' },
+    });
+  });
+
+  it('no envía parámetros extra si el preset no los define', () => {
+    const options = resolveOpenAICompatibleOptions(loadAppConfig({ LLM_PROVIDER: 'ollama' }), {});
+
+    expect(options).not.toHaveProperty('extraParams');
   });
 });

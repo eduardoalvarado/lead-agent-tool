@@ -74,6 +74,17 @@ describe('OpenAICompatibleProvider', () => {
     await expect(llm.complete(request)).rejects.toThrow(LlmProviderError);
   });
 
+  it('informa los tokens consumidos', async () => {
+    sdk.chatCreate.mockReturnValue(
+      Promise.resolve({
+        choices: [{ message: { content: 'ok' } }],
+        usage: { prompt_tokens: 1200, completion_tokens: 80 },
+      }),
+    );
+
+    expect((await llm.complete(request)).usage).toEqual({ inputTokens: 1200, outputTokens: 80 });
+  });
+
   it('envía temperatura 0, tool_choice auto y los parámetros propios del preset', async () => {
     sdk.chatCreate.mockReturnValue(Promise.resolve({ choices: [{ message: { content: 'ok' } }] }));
 
@@ -102,11 +113,13 @@ describe('BedrockProvider', () => {
     sdk.bedrockCreate.mockResolvedValue({
       stop_reason: 'end_turn',
       content: [{ type: 'text', text: 'Listo.' }],
+      usage: { input_tokens: 900, output_tokens: 40, cache_read_input_tokens: 100 },
     });
 
     const completion = await bedrock.complete(request);
 
     expect(completion.content).toBe('Listo.');
+    expect(completion.usage).toEqual({ inputTokens: 1000, outputTokens: 40 });
     const params = sdk.bedrockCreate.mock.calls[0]?.[0];
     expect(params).toMatchObject({
       model: 'anthropic.claude-haiku-5-5',
@@ -118,7 +131,11 @@ describe('BedrockProvider', () => {
   });
 
   it.each(['refusal', 'max_tokens'])('trata stop_reason=%s como error', async (stopReason) => {
-    sdk.bedrockCreate.mockResolvedValue({ stop_reason: stopReason, content: [] });
+    sdk.bedrockCreate.mockResolvedValue({
+      stop_reason: stopReason,
+      content: [],
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
 
     await expect(bedrock.complete(request)).rejects.toThrow(LlmProviderError);
   });

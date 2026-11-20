@@ -19,6 +19,8 @@ export const AppConfigSchema = z
     LLM_API_KEY: z.string().optional(),
     LLM_MODEL: z.string().min(1).optional(),
     LLM_BASE_URL: z.url().optional(),
+    // Esfuerzo de razonamiento (modelos que lo admiten, p. ej. gpt-oss): menos esfuerzo = menos tokens.
+    LLM_REASONING_EFFORT: z.enum(['low', 'medium', 'high']).optional(),
     AWS_REGION: z.string().min(1).default('us-east-2'),
     BEDROCK_MODEL: z.string().min(1).default('anthropic.claude-haiku-5-5'),
     BEDROCK_EFFORT: z.enum(['low', 'medium', 'high']).default('medium'),

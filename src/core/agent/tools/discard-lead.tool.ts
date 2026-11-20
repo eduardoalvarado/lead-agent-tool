@@ -27,7 +27,7 @@ export class DiscardLeadTool extends ZodTool<typeof DiscardLeadArgsSchema> {
   protected readonly name = 'discard_lead';
 
   protected readonly description =
-    'Registra un candidato que NO cumple los criterios (directorio, red social, otra ubicación u otro sector, sin web propia…), con su URL y el motivo. Cuenta como decisión para poder seguir buscando.';
+    'Registra un candidato que no cumple los criterios, con su URL y el motivo.';
 
   protected readonly schema = DiscardLeadArgsSchema;
 

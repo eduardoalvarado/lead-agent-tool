@@ -65,7 +65,18 @@ export class BedrockProvider implements LLMProvider {
     if (response.stop_reason && UNUSABLE_STOP_REASONS.has(response.stop_reason)) {
       throw new LlmProviderError(`Bedrock: respuesta no utilizable (${response.stop_reason}).`);
     }
-    return fromAnthropicMessage(response);
+    const { usage } = response;
+    return {
+      ...fromAnthropicMessage(response),
+      // La entrada cacheada también es entrada procesada (se factura con descuento).
+      usage: {
+        inputTokens:
+          usage.input_tokens +
+          (usage.cache_read_input_tokens ?? 0) +
+          (usage.cache_creation_input_tokens ?? 0),
+        outputTokens: usage.output_tokens,
+      },
+    };
   }
 
   private async send(params: Anthropic.MessageCreateParamsNonStreaming) {

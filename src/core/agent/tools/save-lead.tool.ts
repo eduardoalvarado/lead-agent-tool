@@ -10,7 +10,7 @@ export class SaveLeadTool extends ZodTool<typeof LeadCandidateSchema> {
   protected readonly name = 'save_lead';
 
   protected readonly description =
-    'Guarda un lead en la base de datos. Llámalo una vez por empresa real del sector y la ubicación pedidos, con datos copiados tal cual de la fuente (null si no aparecen). Si la validación falla, corrige los campos indicados y vuelve a llamarlo.';
+    'Guarda un lead con datos copiados tal cual de la fuente (null si no aparecen).';
 
   protected readonly schema = LeadCandidateSchema;
 

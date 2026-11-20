@@ -4,7 +4,7 @@ import { NO_OUTCOME, type ToolExecutionContext, type ToolResult } from './agent-
 import { truncate } from './truncate.js';
 import { ZodTool } from './zod-tool.js';
 
-export const DEFAULT_FETCH_PAGE_MAX_CHARS = 2500;
+export const DEFAULT_FETCH_PAGE_MAX_CHARS = 1500;
 
 const FetchPageArgsSchema = z.object({
   url: z.url({ protocol: /^https?$/ }).describe('URL de la página a leer.'),
@@ -14,7 +14,7 @@ export class FetchPageTool extends ZodTool<typeof FetchPageArgsSchema> {
   protected readonly name = 'fetch_page';
 
   protected readonly description =
-    'Lee el texto de una página de la web propia de una empresa (truncado), por ejemplo su página de contacto, para confirmar datos que el extracto no muestra. No lo uses con directorios ni redes sociales, ni para releer una página. Se bloquea si otra empresa ya leída sigue sin decidir.';
+    'Lee una página de la web propia de una empresa (p. ej. contacto) para confirmar datos.';
 
   protected readonly schema = FetchPageArgsSchema;
 

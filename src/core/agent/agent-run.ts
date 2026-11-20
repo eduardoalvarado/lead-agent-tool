@@ -1,4 +1,9 @@
-import type { AgentRunSummary, DiscardedCandidate, StopReason } from '../domain/run-summary.js';
+import type {
+  AgentRunSummary,
+  DiscardedCandidate,
+  RunUsage,
+  StopReason,
+} from '../domain/run-summary.js';
 import type { Lead } from '../domain/lead.js';
 import type { ChatMessage, LlmCompletion, ToolCall } from '../ports/llm-provider.js';
 import type { ToolExecutionContext, ToolResult } from './tools/agent-tool.js';
@@ -24,6 +29,8 @@ export class AgentRun {
   private lastMessage: string | null = null;
 
   private failure: string | null = null;
+
+  private usage: RunUsage = { llmCalls: 0, inputTokens: 0, outputTokens: 0 };
 
   constructor(
     readonly context: ToolExecutionContext,
@@ -67,6 +74,11 @@ export class AgentRun {
       providerState: completion.providerState,
     });
     if (completion.content) this.lastMessage = completion.content;
+    this.usage = {
+      llmCalls: this.usage.llmCalls + 1,
+      inputTokens: this.usage.inputTokens + (completion.usage?.inputTokens ?? 0),
+      outputTokens: this.usage.outputTokens + (completion.usage?.outputTokens ?? 0),
+    };
   }
 
   /** Mensaje del sistema (no del LLM ni de un tool) agregado al historial. */
@@ -94,6 +106,7 @@ export class AgentRun {
       stopReason,
       finalMessage: this.lastMessage,
       error: this.failure,
+      usage: this.usage,
     };
   }
 }

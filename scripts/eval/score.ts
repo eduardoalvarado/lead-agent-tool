@@ -20,6 +20,7 @@ export interface RunScore {
   readonly hallucinations: readonly Hallucination[];
   readonly stopReason: AgentRunSummary['stopReason'];
   readonly iterations: number;
+  readonly usage: AgentRunSummary['usage'];
 }
 
 /** Texto fuente por dominio (todo lo que el agente pudo leer de esa empresa). */
@@ -79,5 +80,6 @@ export function scoreRun(
     hallucinations: summary.savedLeads.flatMap((lead) => findHallucinations(lead, source)),
     stopReason: summary.stopReason,
     iterations: summary.iterations,
+    usage: summary.usage,
   };
 }

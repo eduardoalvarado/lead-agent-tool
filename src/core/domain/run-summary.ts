@@ -10,6 +10,13 @@ export interface DiscardedCandidate {
   readonly reason: string;
 }
 
+/** Consumo del LLM en la ejecución: permite estimar costo por job y por lead. */
+export interface RunUsage {
+  readonly llmCalls: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+}
+
 export interface AgentRunSummary {
   readonly jobId: string;
   readonly criteria: SearchCriteria;
@@ -21,4 +28,5 @@ export interface AgentRunSummary {
   readonly finalMessage: string | null;
   /** Motivo del corte cuando `stopReason` es `llm_error`; los leads ya guardados se conservan. */
   readonly error: string | null;
+  readonly usage: RunUsage;
 }

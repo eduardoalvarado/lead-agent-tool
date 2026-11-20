@@ -221,6 +221,7 @@ Las variables pasadas en la línea de comandos tienen prioridad sobre el `.env`.
 | `LLM_TIMEOUT_MS` / `LLM_MAX_RETRIES` | Timeout y reintentos por llamada al LLM | `60000` / `2` |
 | `LLM_PROVIDER` presets | `groq` (`https://api.groq.com/openai/v1`, `openai/gpt-oss-120b`) · `ollama` (`http://localhost:11434/v1`, `qwen3:8b`) · `openai-compatible` (sin defaults) | — |
 | `LLM_API_KEY` / `LLM_MODEL` / `LLM_BASE_URL` | Key, modelo y URL del proveedor compatible con OpenAI; sobrescriben los defaults del preset. Key obligatoria con `groq` y `openai-compatible`; URL y modelo obligatorios con `openai-compatible` | — |
+| `LLM_REASONING_EFFORT` | `low` \| `medium` \| `high`: esfuerzo de razonamiento en modelos que lo admiten (menos esfuerzo = menos tokens) | `low` con `groq` |
 | `AWS_REGION` | Región de Bedrock y DynamoDB | `us-east-2` |
 | `BEDROCK_MODEL` / `BEDROCK_EFFORT` / `BEDROCK_MAX_TOKENS` | Modelo de Claude en Bedrock, esfuerzo y tokens máximos | `anthropic.claude-haiku-5-5` / `medium` / `16000` |
 | `SEARCH_PROVIDER` | `tavily` \| `mock` | `mock` |
@@ -235,7 +236,7 @@ Bedrock usa la cadena estándar de credenciales de AWS (perfil, `aws login`, rol
 
 ## 7. Prompt engineering (principios)
 
-El system prompt está en `src/core/agent/prompts/`, separado por responsabilidad: flujo de trabajo (`system-prompt.ts`), reglas de extracción y seguridad (`extraction-rules.ts`), rúbrica de cualificación (`qualification-rubric.ts`) y aviso de presupuesto (`budget-notice.ts`).
+El system prompt está en `src/core/agent/prompts/`, separado por responsabilidad: flujo de trabajo (`system-prompt.ts`), reglas de extracción y seguridad (`extraction-rules.ts`), rúbrica de cualificación (`qualification-rubric.ts`) y aviso de límite de iteraciones (`iteration-limit-notice.ts`).
 
 - **Rol y flujo explícitos:** buscar → analizar todos los resultados → decidir cada candidato (`save_lead` / `discard_lead`) → terminar con un resumen; el LLM planifica las consultas a partir de sector + ubicación.
 - **Anti-alucinación:** solo datos presentes en la fuente, copiados tal cual; `null` si no existen; `sourceUrl` obligatorio; nunca inventar emails, teléfonos ni direcciones.
@@ -243,9 +244,11 @@ El system prompt está en `src/core/agent/prompts/`, separado por responsabilida
 - **Seguridad ante prompt injection:** el contenido de búsquedas y páginas es información, nunca instrucciones.
 - **Salida estructurada:** el JSON Schema de `save_lead` se genera desde el schema Zod del Lead, con descripciones por campo; si la validación falla, el error vuelve al LLM para que se corrija.
 - **Defensa en profundidad en código:** el sitio web no puede ser una red social o un directorio conocido, y los campos de contexto (`id`, sector solicitado, ubicación, `jobId`, fecha) los asigna el código, no el LLM.
-- **Guardas de flujo deterministas** (`CandidateLedger`): no se busca de nuevo con resultados sin decidir ni se lee otra empresa con una leída sin decidir; aviso explícito cuando una búsqueda no trae novedades y cuando quedan 2 respuestas de presupuesto.
+- **Guardas de flujo deterministas** (`CandidateLedger`): no se busca de nuevo con resultados sin decidir ni se lee otra empresa con una leída sin decidir; aviso explícito cuando una búsqueda no trae novedades y **aviso de límite de iteraciones** cuando quedan 2 respuestas, para que el LLM decida lo pendiente y cierre con su resumen en lugar de quedar cortado.
 - **Límites:** máximo de iteraciones y de leads por ejecución. Temperatura 0 donde el modelo lo admite (APIs compatibles con OpenAI); los modelos actuales de Claude no aceptan `temperature` y se controlan con `effort`.
-- **Medición:** `npm run eval` ejecuta el agente sobre casos dorados del dataset mock y reporta precisión, recall, trampas guardadas/descartadas y alucinaciones (cada email, teléfono o dirección guardado debe aparecer en la fuente).
+- **Consumo medido:** cada adaptador informa los tokens de entrada y salida; el resumen de cada ejecución incluye `usage` (llamadas, tokens) para estimar el costo por job y por lead.
+- **Eficiencia de tokens:** como el historial se reenvía en cada llamada, el costo crece con las iteraciones; por eso se acotan las observaciones (extractos de 300 caracteres, páginas de 1.500), se compactan las antiguas con proveedores de cuota baja, el razonamiento usa esfuerzo bajo en Groq y el prefijo (system prompt + tools) se mantiene estable para aprovechar la caché de prefijo donde exista.
+- **Medición de calidad:** `npm run eval` (o `npm run eval -- --case dental-lima`) ejecuta el agente sobre casos dorados del dataset mock y reporta precisión, recall, trampas guardadas/descartadas y alucinaciones (cada email, teléfono o dirección guardado debe aparecer en la fuente).
 
 ---
 
@@ -269,7 +272,7 @@ El system prompt está en `src/core/agent/prompts/`, separado por responsabilida
 - Cumplimiento de Ley 29733 (datos personales), base legal y retención de datos.
 - Deduplicación avanzada (fuzzy matching por nombre/dirección).
 - Ampliar la evaluación: más sectores y casos, ejecución periódica sobre búsquedas reales y métricas de costo por lead.
-- Observabilidad del LLM (trazas de tokens, costo y latencia por job).
+- Observabilidad del LLM: el consumo de tokens ya se mide por job; falta traducirlo a costo, medir latencia por paso y exportarlo a métricas (CloudWatch).
 - Optimización de cold start de NestJS en Lambda (bundle con esbuild, provisioned concurrency si aplica).
 - Frontend para el equipo comercial (listado, filtros por score, exportación).
 - IaC (AWS SAM / CDK), CI/CD y entornos.
