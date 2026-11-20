@@ -11,6 +11,7 @@ import type {
 import type { Logger } from '../ports/logger.js';
 import { AgentRun } from './agent-run.js';
 import { CandidateLedger } from './candidate-ledger.js';
+import { buildBudgetNotice } from './prompts/budget-notice.js';
 import { buildSystemPrompt, buildUserPrompt } from './prompts/system-prompt.js';
 import { type AgentTool, NO_OUTCOME, type ToolResult } from './tools/agent-tool.js';
 import { truncate } from './tools/truncate.js';
@@ -23,6 +24,9 @@ export interface LeadAgentOptions {
 }
 
 const LOG_PREVIEW_CHARS = 300;
+
+// Respuestas restantes en las que se avisa al LLM que debe cerrar lo pendiente.
+const BUDGET_NOTICE_AT_REMAINING = 2;
 
 function parseArguments(raw: string): unknown {
   try {
@@ -87,8 +91,17 @@ export class LeadAgent {
 
       // eslint-disable-next-line no-await-in-loop
       if (await this.executeToolCalls(completion.toolCalls, run)) return 'max_leads';
+      this.warnIfBudgetEnding(run);
     }
     return 'max_iterations';
+  }
+
+  /** Avisa una sola vez al LLM que se acaba el presupuesto, para que cierre lo pendiente. */
+  private warnIfBudgetEnding(run: AgentRun): void {
+    const remaining = this.options.maxIterations - run.iteration;
+    if (remaining !== BUDGET_NOTICE_AT_REMAINING) return;
+    run.recordNotice(buildBudgetNotice(remaining));
+    this.logger.info(`[${run.iteration}] Aviso de presupuesto`, { remaining });
   }
 
   /** Llama al LLM; si falla, registra el error y devuelve `null` para cortar con lo avanzado. */

@@ -69,6 +69,11 @@ export class AgentRun {
     if (completion.content) this.lastMessage = completion.content;
   }
 
+  /** Mensaje del sistema (no del LLM ni de un tool) agregado al historial. */
+  recordNotice(text: string): void {
+    this.history.push({ role: 'user', content: text });
+  }
+
   recordFailure(reason: string): void {
     this.failure = reason;
   }

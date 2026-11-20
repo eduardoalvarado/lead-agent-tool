@@ -14,7 +14,7 @@ export class FetchPageTool extends ZodTool<typeof FetchPageArgsSchema> {
   protected readonly name = 'fetch_page';
 
   protected readonly description =
-    'Lee el texto de una página web (truncado). Úsalo solo si el extracto de búsqueda no basta para confirmar datos del lead, por ejemplo la página de contacto.';
+    'Lee el texto de una página de la web propia de una empresa (truncado), por ejemplo su página de contacto, para confirmar datos que el extracto no muestra. No lo uses con directorios ni redes sociales, ni para releer una página. Se bloquea si otra empresa ya leída sigue sin decidir.';
 
   protected readonly schema = FetchPageArgsSchema;
 

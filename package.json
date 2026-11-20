@@ -24,7 +24,8 @@
     "test:integration": "RUN_INTEGRATION=1 vitest run tests/integration",
     "agent": "node dist/app/cli.js",
     "preagent": "nest build",
-    "test:coverage": "vitest run --coverage --coverage.include=src/core --coverage.include=src/infrastructure --coverage.include=src/app"
+    "test:coverage": "vitest run --coverage --coverage.include=src/core --coverage.include=src/infrastructure --coverage.include=src/app",
+    "eval": "node --env-file-if-exists=.env --import tsx scripts/eval-agent.ts"
   },
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^1.1.2",

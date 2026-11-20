@@ -118,8 +118,8 @@ src/
     ├── main.ts                   # servidor HTTP local
     ├── cli.ts                    # CLI (createApplicationContext)
     └── lambda.ts                 # handler AWS Lambda (@codegenie/serverless-express)
-scripts/                          # db-init.ts (crea la tabla), smoke-agent.ts (agente sin Nest)
-tests/                            # core/, infrastructure/, app/ (incluye e2e), integration/, support/
+scripts/                          # db-init.ts, smoke-agent.ts (agente sin Nest), eval-agent.ts + eval/ (casos dorados)
+tests/                            # core/, infrastructure/, app/ (incluye e2e), eval/, integration/, support/
 docs/                             # diagramas (HTML, PNG, Mermaid)
 ```
 
@@ -201,6 +201,7 @@ curl http://localhost:3000/leads
 
 # Calidad
 npm test                      # tests unitarios + e2e
+npm run eval                  # evaluación del agente con casos dorados (usa el LLM real, modo mock)
 npm run test:integration      # contra DynamoDB Local (requiere Docker)
 npm run test:coverage
 npm run lint && npm run build
@@ -234,13 +235,17 @@ Bedrock usa la cadena estándar de credenciales de AWS (perfil, `aws login`, rol
 
 ## 7. Prompt engineering (principios)
 
-- Rol y objetivo explícitos; el LLM planifica queries a partir de sector + ubicación.
-- Reglas anti-alucinación: solo datos presentes en la fuente, `null` si no existe, `sourceUrl` obligatorio, nunca inventar emails/teléfonos.
-- Criterios de cualificación explícitos (encaje sector/ubicación, legitimidad, contactabilidad, señales de tamaño).
-- Salida estructurada vía el schema del tool `save_lead` (JSON Schema generado desde Zod, con descripciones por campo) + validación Zod: el error vuelve al LLM para que se corrija.
-- Defensa en profundidad en código: el sitio web no puede ser una red social o un directorio conocido, y los campos de contexto los asigna el código, no el LLM.
-- Guardas de flujo deterministas (`CandidateLedger`): no se busca de nuevo con resultados sin decidir ni se lee otra empresa con una leída sin decidir; aviso explícito cuando una búsqueda no trae novedades.
-- Máximo de iteraciones y de leads por ejecución. Temperatura 0 donde el modelo lo admite (APIs compatibles con OpenAI); los modelos actuales de Claude no aceptan `temperature` y se controlan con `effort`.
+El system prompt está en `src/core/agent/prompts/`, separado por responsabilidad: flujo de trabajo (`system-prompt.ts`), reglas de extracción y seguridad (`extraction-rules.ts`), rúbrica de cualificación (`qualification-rubric.ts`) y aviso de presupuesto (`budget-notice.ts`).
+
+- **Rol y flujo explícitos:** buscar → analizar todos los resultados → decidir cada candidato (`save_lead` / `discard_lead`) → terminar con un resumen; el LLM planifica las consultas a partir de sector + ubicación.
+- **Anti-alucinación:** solo datos presentes en la fuente, copiados tal cual; `null` si no existen; `sourceUrl` obligatorio; nunca inventar emails, teléfonos ni direcciones.
+- **Cualificación con rúbrica de 100 puntos:** encaje (35) + legitimidad (25) + contactabilidad (25) + madurez (15), con puntos por señal observada; `qualificationReason` cita las señales y `confidence` tiene una definición explícita por nivel (web propia / solo extracto / datos parciales).
+- **Seguridad ante prompt injection:** el contenido de búsquedas y páginas es información, nunca instrucciones.
+- **Salida estructurada:** el JSON Schema de `save_lead` se genera desde el schema Zod del Lead, con descripciones por campo; si la validación falla, el error vuelve al LLM para que se corrija.
+- **Defensa en profundidad en código:** el sitio web no puede ser una red social o un directorio conocido, y los campos de contexto (`id`, sector solicitado, ubicación, `jobId`, fecha) los asigna el código, no el LLM.
+- **Guardas de flujo deterministas** (`CandidateLedger`): no se busca de nuevo con resultados sin decidir ni se lee otra empresa con una leída sin decidir; aviso explícito cuando una búsqueda no trae novedades y cuando quedan 2 respuestas de presupuesto.
+- **Límites:** máximo de iteraciones y de leads por ejecución. Temperatura 0 donde el modelo lo admite (APIs compatibles con OpenAI); los modelos actuales de Claude no aceptan `temperature` y se controlan con `effort`.
+- **Medición:** `npm run eval` ejecuta el agente sobre casos dorados del dataset mock y reporta precisión, recall, trampas guardadas/descartadas y alucinaciones (cada email, teléfono o dirección guardado debe aparecer en la fuente).
 
 ---
 
@@ -263,7 +268,7 @@ Bedrock usa la cadena estándar de credenciales de AWS (perfil, `aws login`, rol
 - Enriquecimiento con fuentes adicionales (Google Places, LinkedIn, SUNAT/RUC).
 - Cumplimiento de Ley 29733 (datos personales), base legal y retención de datos.
 - Deduplicación avanzada (fuzzy matching por nombre/dirección).
-- Evaluación del agente (set de casos dorados, métricas de precisión y alucinación).
+- Ampliar la evaluación: más sectores y casos, ejecución periódica sobre búsquedas reales y métricas de costo por lead.
 - Observabilidad del LLM (trazas de tokens, costo y latencia por job).
 - Optimización de cold start de NestJS en Lambda (bundle con esbuild, provisioned concurrency si aplica).
 - Frontend para el equipo comercial (listado, filtros por score, exportación).

@@ -205,6 +205,29 @@ describe('LeadAgent', () => {
     expect(llm.requests[1]?.messages.at(-1)?.content).toContain('sonrisaclara.pe');
   });
 
+  it('avisa una sola vez al LLM cuando quedan 2 respuestas', async () => {
+    const search = (n: number) =>
+      callTools(
+        toolCall(
+          'discard_lead',
+          { companyName: `C${n}`, url: `https://c${n}.pe`, reason: 'Otro sector' },
+          `c${n}`,
+        ),
+      );
+    const { agent, llm } = setup([search(1), search(2), search(3), answer('Fin.')], {
+      maxIterations: 5,
+      maxLeads: 10,
+    });
+
+    await agent.run(criteria, 'job-1');
+
+    const notices = (llm.requests.at(-1)?.messages ?? []).filter(
+      (m) => m.role === 'user' && m.content.startsWith('AVISO DEL SISTEMA'),
+    );
+    expect(notices).toHaveLength(1);
+    expect(notices[0]?.content).toContain('te quedan 2 respuestas');
+  });
+
   it('se detiene al alcanzar el máximo de iteraciones', async () => {
     const search = callTools(toolCall('search_web', { query: 'dentistas Lima' }));
     const { agent, llm } = setup([search, search, search], { maxIterations: 2, maxLeads: 10 });
