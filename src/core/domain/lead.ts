@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { isAggregatorDomain } from './aggregator-domains.js';
 import { toDomainKey } from './domain-name.js';
+import { QualificationBreakdownSchema, QualificationSignalsSchema } from './qualification.js';
 
 export const CONFIDENCE_LEVELS = ['high', 'medium', 'low'] as const;
 
@@ -51,29 +52,24 @@ export const LeadCandidateSchema = z.object({
     .max(600)
     .describe('Resumen de 1 a 3 frases de lo que hace la empresa, basado solo en la fuente.'),
   contact: LeadContactSchema,
-  qualificationScore: z
-    .number()
-    .int()
-    .min(0)
-    .max(100)
-    .describe('Puntaje 0-100 de utilidad del lead para el equipo comercial.'),
-  qualificationReason: z
-    .string()
-    .trim()
-    .min(10)
-    .max(500)
-    .describe('Justificación breve del puntaje citando señales observadas en la fuente.'),
+  qualificationSignals: QualificationSignalsSchema,
   confidence: z
     .enum(CONFIDENCE_LEVELS)
     .describe('Confianza en la exactitud de los datos extraídos.'),
   sourceUrl: httpUrl().describe('URL exacta de la página de donde se extrajeron los datos.'),
 });
 
+export type LeadContact = z.infer<typeof LeadContactSchema>;
+
 export type LeadCandidate = z.infer<typeof LeadCandidateSchema>;
 
 /** Lead persistido: datos extraídos + contexto de la ejecución, asignado por el código. */
 export const LeadSchema = LeadCandidateSchema.extend({
   id: z.string().min(1),
+  // Calculados por el código a partir de qualificationSignals y del contacto (ver qualification.ts).
+  qualificationScore: z.number().int().min(0).max(100),
+  qualificationBreakdown: QualificationBreakdownSchema,
+  qualificationReason: z.string().min(1),
   requestedSector: z.string().min(1),
   location: z.string().min(1),
   jobId: z.string().min(1),

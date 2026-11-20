@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 import { toDomainKey } from '../../domain/domain-name.js';
 import { type Lead, LeadCandidateSchema } from '../../domain/lead.js';
+import { scoreQualification } from '../../domain/qualification.js';
 import type { LeadRepository } from '../../ports/lead-repository.js';
 import type { Clock } from '../../ports/system.js';
 import type { ToolExecutionContext, ToolResult } from './agent-tool.js';
@@ -25,9 +26,13 @@ export class SaveLeadTool extends ZodTool<typeof LeadCandidateSchema> {
     candidate: z.output<typeof LeadCandidateSchema>,
     { criteria, jobId, ledger }: ToolExecutionContext,
   ): Promise<ToolResult> {
-    // Sector solicitado, ubicación, jobId e id los asigna el código, nunca el LLM.
+    // Sector solicitado, ubicación, jobId, id y el puntaje los asigna el código, nunca el LLM.
+    const qualification = scoreQualification(candidate.qualificationSignals, candidate.contact);
     const lead: Lead = {
       ...candidate,
+      qualificationScore: qualification.score,
+      qualificationBreakdown: qualification.breakdown,
+      qualificationReason: qualification.reason,
       id: toDomainKey(candidate.contact.website),
       requestedSector: criteria.sector,
       location: criteria.location,
@@ -51,6 +56,9 @@ export class SaveLeadTool extends ZodTool<typeof LeadCandidateSchema> {
         },
       };
     }
-    return { output: `GUARDADO: lead ${lead.id}.`, outcome: { kind: 'saved', lead } };
+    return {
+      output: `GUARDADO: lead ${lead.id} (puntaje ${lead.qualificationScore}).`,
+      outcome: { kind: 'saved', lead },
+    };
   }
 }

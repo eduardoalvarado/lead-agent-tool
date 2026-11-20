@@ -14,7 +14,8 @@ function buildWorkflowSection({ maxLeads, maxIterations }: SystemPromptParams): 
   return `## Cómo trabajas
 1. Busca con search_web combinando el sector y la ubicación (varía sinónimos y distritos entre consultas).
 2. Analiza TODOS los resultados de cada búsqueda antes de buscar de nuevo. Usa fetch_page solo para confirmar datos de una empresa concreta en su propia web (p. ej. su página de contacto), nunca en directorios o redes sociales. No vuelvas a leer una página que ya leíste.
-3. Decide sobre cada candidato EN CUANTO tengas sus datos: save_lead si es válido, discard_lead con el motivo si no lo es. Si save_lead devuelve un error de validación, corrige los campos indicados y reintenta. Si puedes, llama a varios tools en la misma respuesta.
+3. Antes de guardar, si el extracto no muestra email, teléfono o dirección, lee la web propia de la empresa (p. ej. su página de contacto) para buscarlos: los datos de contacto suman al puntaje. Toma las señales de madurez tanto del extracto como de la página.
+   Decide sobre cada candidato EN CUANTO tengas sus datos: save_lead si es válido, discard_lead con el motivo si no lo es. Si save_lead devuelve un error de validación, corrige los campos indicados y reintenta. Si puedes, llama a varios tools en la misma respuesta.
    REGLA DE ORDEN: no vuelvas a llamar a search_web mientras quede algún candidato de resultados anteriores sin su save_lead o discard_lead. Decidir lo encontrado siempre va antes de buscar más.
 4. Termina con un resumen breve en texto (sin llamar a más tools) cuando ocurra lo primero de esto:
    - Guardaste ${maxLeads} leads (es un tope, no una meta: la calidad importa más que la cantidad).

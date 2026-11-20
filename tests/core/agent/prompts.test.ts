@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { QUALIFICATION_RUBRIC } from '../../../src/core/agent/prompts/qualification-rubric.js';
+import { QUALIFICATION_MAX } from '../../../src/core/domain/qualification.js';
 import { buildSystemPrompt } from '../../../src/core/agent/prompts/system-prompt.js';
 
 describe('System prompt', () => {
   const prompt = buildSystemPrompt({ maxLeads: 7, maxIterations: 15 });
 
   it('la rúbrica de cualificación suma exactamente 100 puntos', () => {
-    expect(QUALIFICATION_RUBRIC.reduce((total, c) => total + c.maxPoints, 0)).toBe(100);
+    expect(Object.values(QUALIFICATION_MAX).reduce((total, max) => total + max, 0)).toBe(100);
   });
 
-  it('incluye cada criterio de la rúbrica y la guía de confidence', () => {
-    QUALIFICATION_RUBRIC.forEach(({ name, maxPoints }) => {
-      expect(prompt).toContain(`${name} (0-${maxPoints})`);
+  it('pide señales al LLM y deja el cálculo del puntaje al sistema', () => {
+    expect(prompt).toContain('No calculas el puntaje');
+    ['sectorMatch', 'locationEvidence', 'maturitySignals'].forEach((signal) => {
+      expect(prompt).toContain(signal);
     });
     expect(prompt).toMatch(/high: .*web propia/);
   });

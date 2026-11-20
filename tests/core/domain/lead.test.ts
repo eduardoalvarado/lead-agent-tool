@@ -18,8 +18,26 @@ describe('LeadCandidateSchema', () => {
 
   it.each([
     ['sin sourceUrl', { sourceUrl: undefined }],
-    ['score fuera de rango', { qualificationScore: 120 }],
-    ['score decimal', { qualificationScore: 70.5 }],
+    [
+      'con un sectorMatch desconocido',
+      {
+        qualificationSignals: {
+          sectorMatch: 'none',
+          locationEvidence: 'confirmed',
+          maturitySignals: [],
+        },
+      },
+    ],
+    [
+      'con demasiadas señales de madurez',
+      {
+        qualificationSignals: {
+          sectorMatch: 'exact',
+          locationEvidence: 'confirmed',
+          maturitySignals: ['a1', 'b22', 'c33', 'd44', 'e55', 'f66'].map((x) => `señal ${x}`),
+        },
+      },
+    ],
     ['confidence inválida', { confidence: 'very-high' }],
   ])('rechaza un candidato %s', (_case, overrides) => {
     const candidate = { ...buildCandidate(), ...overrides };

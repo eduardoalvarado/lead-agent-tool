@@ -88,8 +88,11 @@ export function buildCandidate(overrides: Partial<LeadCandidate> = {}): LeadCand
       phone: '(01) 241-7788',
       address: 'Av. Benavides 1920, Miraflores',
     },
-    qualificationScore: 85,
-    qualificationReason: 'Encaja con el sector, web propia, teléfono y email publicados.',
+    qualificationSignals: {
+      sectorMatch: 'exact',
+      locationEvidence: 'confirmed',
+      maturitySignals: ['2 sedes'],
+    },
     confidence: 'high',
     sourceUrl: 'https://sonrisaclara.pe/',
     ...overrides,

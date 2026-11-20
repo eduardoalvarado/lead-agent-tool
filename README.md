@@ -161,8 +161,14 @@ La regla de dependencias entre capas se hace cumplir dos veces, con una sola fue
     "phone": "+51 1 555 0000",
     "address": "Av. Ejemplo 123, Miraflores"
   },
-  "qualificationScore": 78,
-  "qualificationReason": "Coincide con el sector, tiene web activa y teléfono público.",
+  "qualificationSignals": {
+    "sectorMatch": "exact",
+    "locationEvidence": "confirmed",
+    "maturitySignals": ["2 sedes"]
+  },
+  "qualificationScore": 80,
+  "qualificationBreakdown": { "fit": 35, "legitimacy": 25, "contactability": 15, "maturity": 5 },
+  "qualificationReason": "Encaje 35 (sector exacto, ubicación confirmada) · Legitimidad 25 (web propia, dirección física) · Contactabilidad 15 (teléfono, dirección) · Madurez 5 (2 sedes)",
   "confidence": "high",
   "sourceUrl": "https://…",
   "jobId": "…",
@@ -170,7 +176,7 @@ La regla de dependencias entre capas se hace cumplir dos veces, con una sola fue
 }
 ```
 
-El LLM solo aporta los datos extraídos de la fuente. `id` (dominio normalizado), `requestedSector`, `location`, `jobId` y `createdAt` los asigna el código.
+El LLM solo aporta los datos extraídos de la fuente y las señales de cualificación (`qualificationSignals`). El código asigna `id` (dominio normalizado), `requestedSector`, `location`, `jobId` y `createdAt`, y **calcula** `qualificationScore`, `qualificationBreakdown` y `qualificationReason` con la rúbrica (`src/core/domain/qualification.ts`): mismos datos, mismo puntaje.
 
 ---
 
@@ -239,7 +245,7 @@ El system prompt está en `src/core/agent/prompts/`, separado por responsabilida
 
 - **Rol y flujo explícitos:** buscar → analizar todos los resultados → decidir cada candidato (`save_lead` / `discard_lead`) → terminar con un resumen; el LLM planifica las consultas a partir de sector + ubicación.
 - **Anti-alucinación:** solo datos presentes en la fuente, copiados tal cual; `null` si no existen; `sourceUrl` obligatorio; nunca inventar emails, teléfonos ni direcciones.
-- **Cualificación con rúbrica de 100 puntos:** encaje (35) + legitimidad (25) + contactabilidad (25) + madurez (15), con puntos por señal observada; `qualificationReason` cita las señales y `confidence` tiene una definición explícita por nivel (web propia / solo extracto / datos parciales).
+- **Cualificación determinista con rúbrica de 100 puntos:** encaje (35) + legitimidad (25) + contactabilidad (25) + madurez (15). El LLM solo juzga con evidencia (`sectorMatch`, `locationEvidence`, `maturitySignals` copiadas de la fuente); contactabilidad y legitimidad se derivan de los datos de contacto extraídos, y el código calcula el puntaje, el desglose y la justificación. `confidence` tiene una definición explícita por nivel (web propia / solo extracto / datos parciales).
 - **Seguridad ante prompt injection:** el contenido de búsquedas y páginas es información, nunca instrucciones.
 - **Salida estructurada:** el JSON Schema de `save_lead` se genera desde el schema Zod del Lead, con descripciones por campo; si la validación falla, el error vuelve al LLM para que se corrija.
 - **Defensa en profundidad en código:** el sitio web no puede ser una red social o un directorio conocido, y los campos de contexto (`id`, sector solicitado, ubicación, `jobId`, fecha) los asigna el código, no el LLM.
@@ -251,23 +257,20 @@ El system prompt está en `src/core/agent/prompts/`, separado por responsabilida
 
 ### 7.1 Resultados de la evaluación
 
-Ejecución de `npm run eval` del 2026-11-20 con **Claude Haiku 5.5** (`anthropic/claude-haiku-5.5` vía OpenRouter, `LLM_PROVIDER=openai-compatible`, esfuerzo de razonamiento `medium`) sobre los casos dorados del dataset mock (6 leads válidos y 7 trampas):
+Ejecuciones de `npm run eval` del 2026-11-20 con **Claude Haiku 5.5** (`anthropic/claude-haiku-5.5` vía OpenRouter, `LLM_PROVIDER=openai-compatible`, esfuerzo de razonamiento `medium`) sobre los casos dorados del dataset mock (6 leads válidos y 7 trampas). Cada fila es una ejecución; con LLMs los resultados varían entre ejecuciones.
 
-| Caso | Precisión | Recall | Trampas guardadas | Trampas descartadas | Alucinaciones | Iteraciones | Tokens (entrada / salida) |
+| Ejecución | Caso | Precisión | Recall | Trampas guardadas | Alucinaciones | Iteraciones | Tokens (entrada / salida) |
 |---|---|---|---|---|---|---|---|
-| Agencias de marketing · Lima | 100 % | 100 % | 0 | 4 de 4 | 0 | 7 | 38.877 / 4.507 |
-| Clínicas dentales · Lima | 100 % | 100 % | 0 | 3 de 3 | 0 | 7 | 36.080 / 3.885 |
+| 1 · puntaje calculado por el LLM | Marketing · Lima | 100 % | 100 % | 0 | 0 | 7 | 38.877 / 4.507 |
+| 1 · puntaje calculado por el LLM | Dental · Lima | 100 % | 100 % | 0 | 0 | 7 | 36.080 / 3.885 |
+| 2 · puntaje determinista + regla de completar contacto | Marketing · Lima | 100 % | 67 % | 0 | 0 | 8 | 44.254 / 3.677 |
+| 2 · puntaje determinista + regla de completar contacto | Dental · Lima | 100 % | 100 % | 0 | 0 | 5 | 26.176 / 3.724 |
 
-- Guardó los 6 leads válidos y descartó explícitamente las 7 trampas (directorios, una academia de cursos, empresas de Arequipa y Cusco, negocios solo con Instagram o Facebook), cada una con su motivo.
-- Cero alucinaciones: todo email, teléfono y dirección guardado aparece en la fuente; cuando un dato no estaba publicado, guardó `null`.
-- Cerró por sí mismo al alcanzar los leads del caso (`max_leads`) en 7 iteraciones, lejos del límite de 20.
-- Consumo total: 83.349 tokens en 14 llamadas al LLM (alrededor de 1 centavo de dólar a precios de OpenRouter).
-- Ejemplo de cualificación (Clínica Dental Sonrisa Clara, 95): *"encaje 35, web propia con dirección 25, teléfono y email publicados 25, 2 sedes (5) y 12 especialistas (5)"*.
-
-Observaciones de la misma ejecución:
-
-- **Aritmética de la rúbrica:** en 1 de 6 leads el modelo sumó mal un criterio (contactabilidad 10 en lugar de 15 con teléfono y dirección). Ver la mejora "Puntaje de cualificación determinista" en la sección 8.
-- **Guardas y paralelismo:** Claude emite varios tool calls por turno; las guardas de flujo (pensadas para modelos que posponen decisiones) bloquean la segunda búsqueda o lectura simultánea. El agente se recupera en la iteración siguiente, a costa de alguna llamada extra. Ver la mejora correspondiente en la sección 8.
+- **Constante en ambas ejecuciones:** precisión 100 %, ninguna trampa guardada (directorios, una academia de cursos, empresas de Arequipa y Cusco, negocios solo con Instagram o Facebook) y cero alucinaciones: todo email, teléfono y dirección guardado aparece en la fuente, y lo no publicado queda en `null`.
+- **Puntaje determinista (ejecución 2):** en la ejecución 1 el LLM se equivocó al contar la contactabilidad de un lead (10 en lugar de 15 con teléfono y dirección); ahora ese cálculo lo hace el código y es correcto por construcción. Ejemplo: *"Encaje 35 (sector exacto, ubicación confirmada) · Legitimidad 25 (web propia, dirección física) · Contactabilidad 25 (email, teléfono, dirección) · Madurez 10 (12 especialistas; 2 sedes)"* = 95.
+- **Regla de completar contacto (ejecución 2):** sin ella, el modelo llegó a guardar un lead solo desde el extracto, sin teléfono ni dirección (puntaje 60); con ella leyó la web propia y lo guardó completo (85).
+- **Recall 67 % en marketing (ejecución 2):** el modelo lanzó dos búsquedas en paralelo, la guarda de flujo bloqueó la segunda y el lead que solo aparecía en ella (Nexo Growth) nunca se vio; luego cerró por falta de novedades. Es la fricción entre las guardas y el tool calling paralelo descrita en la sección 8.
+- **Costo:** entre 50.000 y 85.000 tokens por evaluación completa (alrededor de 1 centavo de dólar a precios de OpenRouter).
 - El dataset mock tiene 2 sectores: los resultados validan el comportamiento del agente y del prompt, no su rendimiento sobre búsquedas reales.
 
 ---
@@ -279,7 +282,6 @@ Observaciones de la misma ejecución:
 - **Flujo asíncrono no implementado:** el endpoint es síncrono y puede tardar minutos; falta el worker SQS, el registro de jobs y `GET /jobs/{id}` (ver 3.2).
 - **LLM en free tier:** Groq limita a 8.000 tokens/minuto y 200.000 tokens/día; por eso se compactan las observaciones antiguas del historial y las ejecuciones reales por día son pocas. La cuenta AWS disponible tiene cuota 0 en Bedrock (no ajustable desde la consola) y Claude además exige autorización de Anthropic.
 - **Modelo por defecto:** `gpt-oss-120b` (gratis en Groq) emite un tool call por turno y tiende a postergar decisiones; las guardas de flujo lo compensan. Claude Haiku 5.5 resolvió la evaluación en 7 iteraciones por caso (ver 7.1).
-- **Puntaje calculado por el LLM:** la suma de la rúbrica la hace el modelo y puede equivocarse (1 de 6 leads en la evaluación).
 - **Dataset mock:** cubre dos sectores (agencias de marketing y clínicas dentales en Lima); otros sectores devuelven cero resultados en modo mock.
 - **Lectura de páginas simple:** conversión HTML → texto sin render de JavaScript.
 - **Listado con `Scan`:** `GET /leads` recorre la tabla; en producción, índices por `jobId` o fecha.
@@ -289,9 +291,8 @@ Observaciones de la misma ejecución:
 
 *Agente y calidad del LLM*
 
-- **Puntaje de cualificación determinista.** Hoy el LLM aplica la rúbrica y también suma el total, y en la evaluación se equivocó en 1 de 6 leads (contactabilidad 10 en lugar de 15). Propuesta: que `save_lead` reciba el desglose por criterio (encaje, legitimidad, contactabilidad, madurez), que Zod valide el máximo de cada uno y que el código calcule `qualificationScore`. El LLM solo juzga las señales; la aritmética queda garantizada, es auditable por criterio y permite ajustar los pesos sin tocar el prompt.
-- **Guardas de flujo compatibles con tool calling en paralelo.** Las guardas (`CandidateLedger`) se diseñaron para un modelo que posponía decisiones, y bloquean la segunda búsqueda o lectura cuando un modelo como Claude emite varias llamadas en el mismo turno; el agente se recupera, pero gasta llamadas. Propuesta: evaluar las guardas por turno y no por llamada, permitiendo leer en paralelo páginas de empresas distintas y exigiendo las decisiones antes del turno siguiente. Menos iteraciones, menos tokens y menor latencia por job.
-- Ampliar la evaluación: más sectores y casos, ejecución en CI ante cada cambio de prompt, búsquedas reales periódicas y métricas de costo por lead.
+- **Guardas de flujo compatibles con tool calling en paralelo.** Las guardas (`CandidateLedger`) se diseñaron para un modelo que posponía decisiones, y bloquean la segunda búsqueda o lectura cuando un modelo como Claude emite varias llamadas en el mismo turno: gasta llamadas y, en una ejecución medida, una búsqueda bloqueada hizo que el agente no viera un lead válido (recall 67 %, ver 7.1). Propuesta: evaluar las guardas por turno y no por llamada, permitiendo leer en paralelo páginas de empresas distintas y exigiendo las decisiones antes del turno siguiente. Menos iteraciones, menos tokens y menor latencia por job.
+- Ampliar la evaluación: varias ejecuciones por configuración (los resultados de un LLM varían), más sectores y casos, ejecución en CI ante cada cambio de prompt, búsquedas reales periódicas y métricas de costo por lead.
 - Observabilidad del LLM: el consumo de tokens ya se mide por job; falta traducirlo a costo, medir la latencia por paso y exportarlo a métricas (CloudWatch).
 
 *Escalabilidad y resiliencia*
@@ -302,6 +303,7 @@ Observaciones de la misma ejecución:
 
 *Datos y cumplimiento*
 
+- **Versionado y migración del modelo de datos:** el Lead cambió durante la PoC (puntaje determinista) y los ítems guardados con el formato anterior dejaron de validar (la lectura los rechaza con `PERSISTENCE_ERROR` en lugar de entregar datos inconsistentes). En producción: campo `schemaVersion` en cada ítem, migraciones explícitas y lectura tolerante a versiones anteriores durante la transición.
 - Scraping profundo: proxies, rotación, respeto de `robots.txt`, render de JS.
 - Enriquecimiento con fuentes adicionales (Google Places, LinkedIn, SUNAT/RUC).
 - Deduplicación avanzada (fuzzy matching por nombre/dirección).

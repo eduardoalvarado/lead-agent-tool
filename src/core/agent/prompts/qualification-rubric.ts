@@ -1,36 +1,7 @@
-// Rúbrica de cualificación: hace el qualificationScore explicable y reproducible.
-// Cada criterio suma puntos solo por señales observadas en la fuente.
+import { QUALIFICATION_MAX, QUALIFICATION_POINTS as P } from '../../domain/qualification.js';
 
-export interface RubricCriterion {
-  readonly name: string;
-  readonly maxPoints: number;
-  readonly scoring: string;
-}
-
-export const QUALIFICATION_RUBRIC: readonly RubricCriterion[] = [
-  {
-    name: 'Encaje',
-    maxPoints: 35,
-    scoring:
-      'sector exacto 20 (relacionado 10) + ubicación confirmada en la fuente 15 (solo inferida 5)',
-  },
-  {
-    name: 'Legitimidad',
-    maxPoints: 25,
-    scoring: 'web propia con actividad clara 15 + dirección física o razón social visible 10',
-  },
-  {
-    name: 'Contactabilidad',
-    maxPoints: 25,
-    scoring: 'email 10 + teléfono 10 + dirección 5 (solo los que aparecen literalmente)',
-  },
-  {
-    name: 'Madurez',
-    maxPoints: 15,
-    scoring:
-      '5 por cada señal explícita: varias sedes, tamaño del equipo, años de operación, clientes o casos, variedad de servicios',
-  },
-];
+// Sección de cualificación del prompt. El LLM aporta señales con evidencia; el puntaje lo
+// calcula el código (domain/qualification.ts) con los mismos puntos que se describen aquí.
 
 export const CONFIDENCE_GUIDE = [
   'high: los datos se confirmaron en la web propia de la empresa (fetch_page).',
@@ -39,14 +10,12 @@ export const CONFIDENCE_GUIDE = [
 ] as const;
 
 export function buildQualificationSection(): string {
-  const criteria = QUALIFICATION_RUBRIC.map(
-    ({ name, maxPoints, scoring }) => `- ${name} (0-${maxPoints}): ${scoring}.`,
-  ).join('\n');
   return `## Cualificación
-qualificationScore (0-100) es la suma de estos criterios:
-${criteria}
-qualificationReason: 1 o 2 frases en español que citen las señales concretas que sumaron puntos.
-Ejemplo de estilo: "Clínica de ortodoncia en Miraflores (encaje 35), web propia con dirección (25), teléfono y email publicados (25), 2 sedes (5)."
+No calculas el puntaje: lo calcula el sistema (0-100). Tú entregas qualificationSignals:
+- sectorMatch: "exact" si la empresa es del sector pedido (${P.fit.sector.exact} pts) o "related" si es de un sector afín (${P.fit.sector.related}).
+- locationEvidence: "confirmed" si la fuente menciona la ubicación pedida (${P.fit.location.confirmed}) o "inferred" si solo se deduce (${P.fit.location.inferred}).
+- maturitySignals: señales explícitas de tamaño o madurez copiadas de la fuente: sedes, tamaño del equipo, años de operación, clientes o casos, variedad de servicios (${P.maturity.perSignal} pts cada una, máximo ${QUALIFICATION_MAX.maturity}). Lista vacía si no hay.
+El sistema suma además legitimidad (web propia ${P.legitimacy.ownWebsite} + dirección ${P.legitimacy.address}) y contactabilidad (email ${P.contactability.email}, teléfono ${P.contactability.phone}, dirección ${P.contactability.address}) a partir de los datos de contacto: por eso copia esos datos tal cual y usa null cuando no aparezcan.
 confidence:
 ${CONFIDENCE_GUIDE.map((line) => `- ${line}`).join('\n')}`;
 }

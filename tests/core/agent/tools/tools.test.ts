@@ -36,18 +36,28 @@ describe('SaveLeadTool', () => {
       location: 'Lima, Perú',
       jobId: 'job-1',
       createdAt: FIXED_DATE.toISOString(),
+      // Calculado por el código: encaje 35 + legitimidad 25 + contactabilidad 25 + madurez 5.
+      qualificationScore: 90,
+      qualificationBreakdown: { fit: 35, legitimacy: 25, contactability: 25, maturity: 5 },
     });
   });
 
   it('devuelve el error de validación al LLM sin guardar ni lanzar', async () => {
     const repository = new FakeLeadRepository();
-    const invalid = { ...buildCandidate(), qualificationScore: 300 };
+    const invalid = {
+      ...buildCandidate(),
+      qualificationSignals: {
+        sectorMatch: 'mucho',
+        locationEvidence: 'confirmed',
+        maturitySignals: [],
+      },
+    };
 
     const result = await new SaveLeadTool(repository, fixedClock).execute(invalid, context);
 
     expect(result.outcome.kind).toBe('none');
     expect(result.output).toContain('ERROR DE VALIDACIÓN');
-    expect(result.output).toContain('qualificationScore');
+    expect(result.output).toContain('sectorMatch');
     expect(repository.saved).toHaveLength(0);
   });
 
