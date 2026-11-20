@@ -2,6 +2,8 @@
 
 Prueba de concepto (PoC) de un agente IA que, a partir de un **sector empresarial** y una **ubicación**, busca empresas en fuentes públicas de internet, extrae y estructura sus datos con un LLM, los cualifica y los guarda en una base de datos para el equipo comercial.
 
+> **Pruébalo sin instalar nada:** la solución está desplegada en AWS. Abre la **[aplicación web](https://eduardoalvarado.github.io/lead-agent-tool/app/)**, inicia sesión con las credenciales entregadas junto con el reto y busca leads (por ejemplo, "Clínicas dentales" en "Lima, Perú"). También: [Swagger de la API en AWS](https://tqv3fwknx7.execute-api.us-east-2.amazonaws.com/prod/docs) (requiere el token de la sesión) y [diagramas](https://eduardoalvarado.github.io/lead-agent-tool/). Para ejecutarlo en local, ver la sección 6.
+
 ---
 
 ## 1. Finalidad funcional
@@ -27,10 +29,10 @@ Hoy la prospección es manual: un vendedor busca "clínicas dentales en Lima", e
 | "Posibles datos de contacto" invita a alucinar | Solo se guardan contactos que aparezcan **literalmente** en la fuente; si no, `null`. `sourceUrl` es obligatorio. |
 | B2C implica datos personales | Foco en **B2B**. Tratamiento de datos personales (Ley 29733, Perú) queda documentado en limitaciones. |
 | Lead sin sitio web | Se **descarta**: la PK es el dominio normalizado del sitio (deduplicación) y un lead B2B sin web tiene bajo valor comercial. Queda en el resumen del agente como descartado con su motivo. |
-| ¿Endpoint síncrono o asíncrono? | En la PoC, `POST /leads/search` es **síncrono** (devuelve el resumen al terminar) y `GET /leads` lista los leads guardados. En producción el flujo es asíncrono (`202` + `jobId`, ver 3.2). |
-| ¿Cuántas Lambdas en producción? | **Dos**, apegadas al código: `api` (la app NestJS completa, el `lambda.ts` ya implementado) y `agent-worker` (consume SQS y ejecuta el mismo caso de uso). Separar API y worker es necesario (duración, concurrencia y permisos IAM opuestos); separar más la API no aporta valor. |
-| ¿Qué LLM usa la PoC? | El LLM es **intercambiable** por configuración (`LLM_PROVIDER`): un adaptador genérico compatible con OpenAI cubre Groq, Ollama (local) y cualquier otro proveedor compatible; `BedrockProvider` cubre Claude en AWS. La PoC usa **Groq** (`openai/gpt-oss-120b`): la cuenta AWS disponible tiene cuota 0 en Bedrock para todos los modelos (ampliarla requiere un caso con AWS Support) y Claude además exige autorización de Anthropic. `BedrockProvider` está implementado y testeado, y es el proveedor objetivo de producción. |
-| ¿Interfaz frontend? | **Fuera de alcance**: no es entregable ni criterio de evaluación. Se expone **Swagger** (`/docs`) para probar la API y la CLI muestra el razonamiento del agente. |
+| ¿Endpoint síncrono o asíncrono? | **Ambos, por configuración** (`EXECUTION_MODE`). En local (`sync`), `POST /leads/search` devuelve el resumen al terminar. En AWS (`async`), responde `202` con `jobId`, un worker procesa el job desde SQS y el resultado se consulta en `GET /jobs/{id}` (API Gateway corta a los 29 s y el agente tarda minutos). Misma base de código. |
+| ¿Cuántas Lambdas en producción? | **Dos**, apegadas al código: `api` (la app NestJS completa, `lambda.ts`) y `agent-worker` (`worker.ts`, consume SQS y ejecuta el mismo agente). Separar API y worker es necesario (duración, concurrencia y permisos IAM opuestos); separar más la API no aporta valor. |
+| ¿Qué LLM se usa? | El LLM es **intercambiable** por configuración (`LLM_PROVIDER`): un adaptador genérico compatible con OpenAI cubre Groq, Ollama, OpenRouter y otros; `BedrockProvider` cubre Claude en AWS. **Local:** Groq (`openai/gpt-oss-120b`) por defecto, gratis. **AWS:** Claude Haiku 5.5 vía OpenRouter, porque la cuenta AWS disponible tiene cuota 0 en Bedrock para todos los modelos (ampliarla requiere un caso con AWS Support) y Claude además exige autorización de Anthropic. Pasar a Bedrock es un parámetro del despliegue (`LlmProvider=bedrock`), sin cambios de código. |
+| ¿Interfaz frontend y acceso? | No es un entregable del reto, pero se agregó una **aplicación web** mínima (`docs/app/`, en GitHub Pages) para probar el despliegue sin instalar nada. El acceso es **público con login**: un único usuario en Amazon Cognito, creado por el administrador, porque cada búsqueda consume saldo del LLM y de Tavily. En local se usa Swagger (`/docs`) y la CLI. |
 
 ---
 
@@ -64,34 +66,37 @@ Beneficios: el agente se testea sin levantar Nest, el framework y el LLM son ree
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**PoC implementada** (lo que existe y corre en local):
+**Ejecución local** (desarrollo y pruebas, modo síncrono):
 
-![PoC implementada](docs/architecture-poc.png)
+![Ejecución local](docs/architecture-poc.png)
 
 **Flujo del agente:** diagrama de actividades del bucle ReAct, interactivo y animado: [ver en vivo](https://eduardoalvarado.github.io/lead-agent-tool/agent-activity.html) (fuente: [`docs/agent-activity.html`](docs/agent-activity.html)).
 
-### 3.2 Producción en AWS (propuesta)
+### 3.2 Producción en AWS (desplegada)
 
-![Arquitectura de producción en AWS](docs/architecture.png)
+![Arquitectura desplegada en AWS](docs/architecture.png)
 
-Versión interactiva y animada, con los dos modos (PoC / producción) y el flujo paso a paso: **[ver en vivo](https://eduardoalvarado.github.io/lead-agent-tool/architecture.html)** (fuente: [`docs/architecture.html`](docs/architecture.html); todos los diagramas en [GitHub Pages](https://eduardoalvarado.github.io/lead-agent-tool/)). Fuentes Mermaid: [`docs/diagrams/`](docs/diagrams/).
+Versión interactiva y animada, con los dos modos (local / AWS) y el flujo paso a paso: **[ver en vivo](https://eduardoalvarado.github.io/lead-agent-tool/architecture.html)** (fuente: [`docs/architecture.html`](docs/architecture.html); todos los diagramas en [GitHub Pages](https://eduardoalvarado.github.io/lead-agent-tool/)). Fuentes Mermaid: [`docs/diagrams/`](docs/diagrams/). Infraestructura como código: [`infra/template.yaml`](infra/template.yaml) (AWS SAM, desplegada con CloudFormation en `us-east-2`).
 
 ```
-Cliente ─► API Gateway (REST, API key + usage plan) ─► λ api (NestJS)
-                                                        ├─ POST /leads/search: valida, crea job, encola ─► 202 + jobId
-                                                        └─ GET /jobs/{id} · GET /leads ─► DynamoDB
-SQS jobs (lote 1, DLQ tras 3 fallos) ─► λ agent-worker (LeadAgent, concurrencia reservada)
-                                         ├─► Amazon Bedrock (Claude, vía IAM)
-                                         ├─► Tavily + sitios web (HTTPS saliente; key en Secrets Manager)
-                                         └─► DynamoDB (leads con escritura condicional + estado del job)
-Observabilidad: CloudWatch Logs + X-Ray · Seguridad: roles IAM por Lambda, Secrets Manager
-Runtime: nodejs24.x (migración a nodejs26.x cuando esté disponible en Lambda)
+App web (GitHub Pages) ─ login ─► Amazon Cognito (1 usuario, alta solo por el administrador)
+        │ Authorization: Bearer <IdToken>
+        ▼
+API Gateway REST (autorizador Cognito, throttling 2 req/s) ─► λ api (NestJS, EXECUTION_MODE=async)
+                                                               ├─ POST /leads/search: valida, crea job, encola ─► 202 + jobId
+                                                               └─ GET /jobs/{id} · GET /leads ─► DynamoDB
+SQS jobs (lote 1, DLQ tras 3 fallos + alarma) ─► λ agent-worker (LeadAgent, máx. 2 en paralelo, 15 min)
+                                                  ├─► OpenRouter (Claude Haiku 5.5) · alternativa: Amazon Bedrock
+                                                  ├─► Tavily + sitios web (HTTPS saliente)
+                                                  └─► DynamoDB (leads con escritura condicional + estado del job)
+Keys de LLM y Tavily en Secrets Manager · roles IAM por Lambda · CloudWatch Logs (14 días) · runtime nodejs24.x
 ```
 
-- **Por qué asíncrono:** una ejecución del agente tarda minutos y API Gateway corta a los 29 s. La API responde `202` con `jobId` y el cliente consulta el estado.
-- **Por qué dos Lambdas:** la API es corta, escala con el tráfico y solo necesita DynamoDB y SQS; el worker dura minutos, necesita Bedrock, Secrets Manager y salida a internet, y su **concurrencia reservada** es el freno que protege los rate limits del LLM y de Tavily.
-- **Dentro de AWS:** API Gateway, Lambda, SQS + DLQ, DynamoDB, Bedrock, Secrets Manager, CloudWatch y X-Ray. **Fuera de AWS:** Tavily y los sitios web públicos de las empresas (Groq solo como alternativa de LLM).
-- **Qué falta para llegar ahí desde la PoC:** el handler `agent-worker` (llama al mismo `SearchLeadsUseCase`), el registro de jobs, el endpoint `GET /jobs/{id}` y la infraestructura como código. El `lambda.ts` de la API ya está implementado y probado con eventos de API Gateway.
+- **Por qué asíncrono:** una ejecución del agente tarda minutos y API Gateway corta a los 29 s. La API responde `202` con `jobId` y el cliente consulta el estado (la app web lo hace cada 4 s).
+- **Por qué dos Lambdas:** la API es corta, escala con el tráfico y solo necesita DynamoDB y SQS; el worker dura minutos y necesita el LLM, Secrets Manager y salida a internet. El evento de SQS limita el worker a **2 ejecuciones en paralelo**, el freno que protege los rate limits del LLM y de Tavily (la cuenta tiene un límite de 10 ejecuciones concurrentes, que impide reservar concurrencia).
+- **Dentro de AWS:** Cognito, API Gateway, Lambda, SQS + DLQ, DynamoDB, Secrets Manager y CloudWatch. **Fuera de AWS:** OpenRouter (LLM), Tavily y los sitios web públicos de las empresas.
+- **Cambiar a Bedrock:** `npm run aws:deploy -- LlmProvider=bedrock`. El parámetro cambia el adaptador y concede al worker el permiso IAM para invocar Claude; no hay cambios de código. Requiere que la cuenta tenga cuota y acceso a los modelos de Anthropic.
+- **Verificado en AWS:** `POST` → `202` → `pending` → `running` → `completed` en alrededor de 1 minuto, con búsqueda real en Tavily (6 clínicas dentales de Lima en una prueba, 8 agencias de marketing en otra).
 
 ### 3.3 Estructura del código
 
@@ -101,26 +106,29 @@ src/
 │   ├── domain/                   # Lead y criterios (Zod), resumen de ejecución, dominio/agregadores, errors/
 │   ├── ports/                    # LLMProvider, SearchProvider, PageFetcher, LeadRepository, Logger, Clock
 │   ├── agent/                    # LeadAgent (bucle ReAct), AgentRun, CandidateLedger, prompts/, tools/
-│   └── application/              # SearchLeadsUseCase, ListLeadsUseCase
+│   └── application/              # SearchLeads, ListLeads, SubmitSearchJob, ProcessSearchJob, GetJob
 ├── infrastructure/               # TS puro — adaptadores que implementan los puertos
 │   ├── llm/                      # OpenAICompatibleProvider, BedrockProvider y sus mappers
 │   ├── search/                   # TavilyProvider, MockSearchProvider (dataset ficticio de Lima)
 │   ├── fetch/                    # HttpPageFetcher, MockPageFetcher, html-to-text
-│   ├── persistence/              # DynamoLeadRepository, InMemoryLeadRepository, definición de la tabla
+│   ├── persistence/              # DynamoLeadRepository, DynamoJobRepository, definición de las tablas
+│   ├── queue/ · secrets/         # SqsJobQueue, lectura de keys desde Secrets Manager
 │   ├── logging/ · system/        # ConsoleLogger, SystemClock, UuidGenerator
 │   └── shared/
 └── app/                          # NestJS — capa exterior
     ├── config/                   # ConfigModule + validación del entorno con Zod
     ├── common/                   # pipe de validación Zod, filtro de errores de dominio → HTTP
-    ├── leads/                    # LeadsModule, LeadsController, DTOs de Swagger
+    ├── leads/ · jobs/            # LeadsController, JobsController, DTOs de Swagger
     ├── providers/                # tokens, factories (composition root), registro LLM_ADAPTERS
     ├── http-app.factory.ts       # app HTTP compartida por main.ts y lambda.ts
     ├── main.ts                   # servidor HTTP local
     ├── cli.ts                    # CLI (createApplicationContext)
-    └── lambda.ts                 # handler AWS Lambda (@codegenie/serverless-express)
-scripts/                          # db-init.ts, smoke-agent.ts (agente sin Nest), eval-agent.ts + eval/ (casos dorados)
+    ├── lambda.ts                 # handler de la λ api (@codegenie/serverless-express)
+    └── worker.ts                 # handler de la λ agent-worker (eventos SQS)
+scripts/                          # db-init.ts, smoke-agent.ts, eval-agent.ts + eval/, aws/ (secretos, despliegue, usuario)
+infra/                            # template.yaml (AWS SAM): infraestructura como código
 tests/                            # core/, infrastructure/, app/ (incluye e2e), eval/, integration/, support/
-docs/                             # diagramas (HTML, PNG, Mermaid)
+docs/                             # diagramas (HTML, PNG, Mermaid) y app/ (aplicación web)
 ```
 
 La regla de dependencias entre capas se hace cumplir dos veces, con una sola fuente (`architecture-rules.mjs`): ESLint `no-restricted-imports` en `src/core` y `src/infrastructure`, y un test de arquitectura que revisa los imports reales.
@@ -136,11 +144,12 @@ La regla de dependencias entre capas se hace cumplir dos veces, con una sola fue
 | Framework | NestJS 12 (solo capa exterior) | Módulos y DI expresan la separación de capas; el núcleo queda agnóstico. Trade-off: cold start en Lambda (ver limitaciones). |
 | Agente | Bucle ReAct propio sobre tool calling (`LeadAgent`) | Control total y transparente del razonamiento; guardas deterministas en código; sin la caja negra de un framework. Alternativa: LangGraph.js. |
 | LLM (PoC) | Groq · `openai/gpt-oss-120b` por defecto, vía `OpenAICompatibleProvider` | Gratis, para que cualquiera pueda ejecutar la PoC. Elegido por descarte entre los modelos gratuitos disponibles (`llama-3.3-70b-versatile` ya no existe y `qwen3.8-27b` ignoraba los resultados de los tools), no por ser el mejor. El mismo adaptador sirve para Ollama, OpenRouter u otros proveedores compatibles, solo con configuración. |
-| LLM (producción) | Claude vía Amazon Bedrock (`BedrockProvider`) | IAM en lugar de API keys, datos dentro de AWS, facturación y monitoreo centralizados (clave en fintech). Modelo configurable (`BEDROCK_MODEL`, por defecto `anthropic.claude-haiku-5-5`). Ese mismo modelo se evaluó vía OpenRouter (ver 7.1): cuesta prácticamente lo mismo que `gpt-oss-120b` y resolvió los casos dorados sin errores de selección ni alucinaciones. |
+| LLM (AWS) | Claude Haiku 5.5 vía OpenRouter; Bedrock por parámetro | El objetivo para una fintech es Claude vía Amazon Bedrock (IAM en lugar de API keys, datos dentro de AWS); como la cuenta disponible no tiene cuota en Bedrock, el despliegue usa el mismo modelo vía OpenRouter, con la key en Secrets Manager. Ese modelo resolvió los casos dorados sin errores de selección ni alucinaciones (ver 7.1) y cuesta prácticamente lo mismo que `gpt-oss-120b`. |
 | Búsqueda | Tavily + `MockSearchProvider` | Tavily devuelve contenido limpio para LLMs; el mock permite demos y tests sin key ni red. |
 | Validación | Zod | Un solo esquema para el output del LLM (y el JSON Schema de los tools), el entorno y los requests. |
 | Base de datos | DynamoDB (Local en Docker) | Coherente con el diseño serverless; PK = dominio con escritura condicional para deduplicar de forma atómica. Detrás de `LeadRepository`. |
-| Documentación API | `@nestjs/swagger` | Interfaz interactiva para el evaluador sin construir un frontend. |
+| Infraestructura | AWS SAM / CloudFormation, Cognito | Infraestructura como código desplegable con un comando y reversible (`aws:destroy`); login gestionado sin código propio de autenticación. |
+| Documentación API | `@nestjs/swagger` | Interfaz interactiva local y en AWS (con el token de Cognito). |
 | Tests | Vitest (+ SWC para el e2e de Nest) | Núcleo testeado sin Nest con fakes de los puertos; e2e del controller con `@nestjs/testing`. |
 
 ---
@@ -188,7 +197,7 @@ git clone https://github.com/eduardoalvarado/lead-agent-tool.git && cd lead-agen
 cp .env.example .env          # completar LLM_API_KEY (key de Groq) y, para búsqueda real, TAVILY_API_KEY
 npm install
 docker compose up -d          # DynamoDB Local en :8000
-npm run db:init               # crea la tabla (idempotente)
+npm run db:init               # crea las tablas leads y jobs (idempotente)
 
 # CLI (compila y ejecuta; por defecto SEARCH_PROVIDER=mock: sin key de búsqueda ni red)
 npm run agent -- --sector "Agencias de marketing" --location "Lima, Perú"
@@ -235,7 +244,28 @@ Las variables pasadas en la línea de comandos tienen prioridad sobre el `.env`.
 | `DYNAMO_ENDPOINT` / `DYNAMO_TABLE` | Endpoint de DynamoDB Local (vacío en AWS) y tabla | `http://localhost:8000` / `leads` |
 | `AGENT_MAX_ITERATIONS` / `AGENT_MAX_LEADS` | Límites del agente por ejecución | `20` / `10` |
 
+| `EXECUTION_MODE` | `sync` (local: responde el resumen) \| `async` (AWS: 202 + jobId, worker por SQS) | `sync` |
+| `JOBS_TABLE` / `JOBS_QUEUE_URL` | Tabla de jobs y URL de la cola SQS (obligatoria con `async`) | `jobs` / — |
+| `CORS_ORIGINS` | Orígenes permitidos (separados por coma), p. ej. el frontend | — |
+| `SECRETS_ID` | Secreto de Secrets Manager con las API keys; se carga al arrancar (solo en AWS) | — |
+
 Bedrock usa la cadena estándar de credenciales de AWS (perfil, `aws login`, rol IAM); no hace falta definir claves en el `.env`.
+
+### Despliegue en AWS
+
+Requiere AWS CLI con credenciales y el `.env` con `LLM_API_KEY` (OpenRouter) y `TAVILY_API_KEY`. No hace falta SAM CLI: la plantilla se despliega con `aws cloudformation`.
+
+```bash
+npm run aws:secrets           # guarda LLM_API_KEY y TAVILY_API_KEY en Secrets Manager
+npm run aws:deploy            # empaqueta (dist + dependencias de producción) y despliega infra/template.yaml
+npm run aws:user -- evaluador # crea o resetea el único usuario de Cognito; muestra la contraseña una sola vez
+npm run aws:destroy           # elimina el stack y el secreto (irreversible; pide confirmación)
+
+# Parámetros opcionales, p. ej. usar Bedrock en lugar de OpenRouter:
+npm run aws:deploy -- LlmProvider=bedrock
+```
+
+La salida del despliegue muestra la URL de la API, la de Swagger y los identificadores de Cognito que usa la aplicación web (`docs/app/index.html`).
 
 ---
 
@@ -279,13 +309,15 @@ Ejecuciones de `npm run eval` del 2026-11-20 con **Claude Haiku 5.5** (`anthropi
 
 **Limitaciones actuales de la PoC**
 
-- **Flujo asíncrono no implementado:** el endpoint es síncrono y puede tardar minutos; falta el worker SQS, el registro de jobs y `GET /jobs/{id}` (ver 3.2).
+- **Datos fuera de AWS en el despliegue:** el LLM se usa vía OpenRouter, así que el contenido de las búsquedas (datos públicos) sale de AWS hacia un tercero. Para producción en una fintech, Bedrock (`LlmProvider=bedrock`), con la cuota y el acceso correspondientes.
+- **Despliegue con el usuario root de la cuenta:** aceptable en una cuenta personal de prueba; en producción, un rol de despliegue con permisos mínimos (o CI/CD con OIDC) y la cuenta root sin uso diario.
 - **LLM en free tier:** Groq limita a 8.000 tokens/minuto y 200.000 tokens/día; por eso se compactan las observaciones antiguas del historial y las ejecuciones reales por día son pocas. La cuenta AWS disponible tiene cuota 0 en Bedrock (no ajustable desde la consola) y Claude además exige autorización de Anthropic.
 - **Modelo por defecto:** `gpt-oss-120b` (gratis en Groq) emite un tool call por turno y tiende a postergar decisiones; las guardas de flujo lo compensan. Claude Haiku 5.5 resolvió la evaluación en 7 iteraciones por caso (ver 7.1).
 - **Dataset mock:** cubre dos sectores (agencias de marketing y clínicas dentales en Lima); otros sectores devuelven cero resultados en modo mock.
 - **Lectura de páginas simple:** conversión HTML → texto sin render de JavaScript.
 - **Listado con `Scan`:** `GET /leads` recorre la tabla; en producción, índices por `jobId` o fecha.
-- **Sin autenticación en la API local:** en producción, API key + usage plan en API Gateway.
+- **Sin autenticación en la API local:** la autenticación (Cognito) solo existe en el despliegue de AWS.
+- **Un único usuario:** Cognito permite más usuarios y grupos, pero el acceso se limitó a uno porque cada búsqueda consume saldo del LLM y de Tavily; no hay cuotas por usuario.
 
 **Mejoras futuras (qué falta para producción)**
 
@@ -299,7 +331,8 @@ Ejecuciones de `npm run eval` del 2026-11-20 con **Claude Haiku 5.5** (`anthropi
 
 - Rate limits y reintentos con backoff hacia el LLM y la búsqueda; concurrencia controlada por cola.
 - Optimización del cold start de NestJS en Lambda (bundle con esbuild, provisioned concurrency si aplica).
-- IaC (AWS SAM / CDK), CI/CD y entornos.
+- CI/CD (tests, evaluación y despliegue en cada merge) y entornos separados (dev / prod); la infraestructura como código ya existe (`infra/template.yaml`).
+- Trazas distribuidas (X-Ray) y métricas de negocio por job (leads por búsqueda, costo por lead) en CloudWatch.
 
 *Datos y cumplimiento*
 

@@ -6,7 +6,7 @@
     <title>Lead Agent · Arquitectura</title>
     <meta
       name="description"
-      content="Arquitectura del Lead Agent: PoC implementada y propuesta de producción en AWS, con el flujo animado paso a paso."
+      content="Arquitectura del Lead Agent: ejecución local y despliegue en AWS, con el flujo animado paso a paso."
     />
     <style>
       :root {
@@ -395,8 +395,8 @@
         </div>
         <div class="controls">
           <div class="seg" role="group" aria-label="Modo">
-            <button type="button" data-mode="prod">Producción propuesta (AWS)</button>
-            <button type="button" data-mode="poc">PoC implementada</button>
+            <button type="button" data-mode="prod">Producción en AWS (desplegada)</button>
+            <button type="button" data-mode="poc">PoC local</button>
           </div>
           <button type="button" class="btn" id="play">▶ Reproducir</button>
           <button type="button" class="btn" id="theme" aria-label="Cambiar tema">◐ Tema</button>
@@ -465,7 +465,7 @@
         const MODES = {
           prod: {
             subtitle:
-              'Propuesta de despliegue en AWS: asíncrona, serverless, con 2 Lambdas (api y agent-worker) y el LLM dentro de AWS. Fuera de AWS solo quedan Tavily y los sitios web de las empresas.',
+              'Desplegada en AWS (us-east-2) con infraestructura como código: asíncrona, serverless, con login (Cognito) y 2 Lambdas (api y agent-worker). El LLM se usa vía OpenRouter; Bedrock queda como alternativa por parámetro.',
             zones: [
               { x: 20, y: 90, w: 200, h: 480, label: 'Usuarios', kind: 'ext' },
               { x: 240, y: 56, w: 1110, h: 534, label: 'AWS Cloud', kind: 'aws' },
@@ -482,8 +482,8 @@
                 y: row[1],
                 cat: 'ext',
                 icon: 'user',
-                title: 'Cliente / CRM',
-                sub: 'equipo comercial',
+                title: 'Usuario',
+                sub: 'app web · Swagger',
               },
               {
                 id: 'apigw',
@@ -492,7 +492,7 @@
                 cat: 'integ',
                 icon: 'api',
                 title: 'API Gateway',
-                sub: 'REST · API key',
+                sub: 'REST · Cognito',
               },
               {
                 id: 'api',
@@ -502,7 +502,7 @@
                 icon: 'lambda',
                 title: 'λ api (NestJS)',
                 sub: 'POST · GET',
-                tag: 'lambda.ts existente',
+                tag: 'misma app de la PoC',
               },
               {
                 id: 'sqs',
@@ -521,7 +521,7 @@
                 icon: 'lambda',
                 title: 'λ agent-worker',
                 sub: 'LeadAgent · ReAct',
-                tag: 'concurrencia reservada',
+                tag: 'máx. 2 en paralelo',
               },
               {
                 id: 'bedrock',
@@ -530,7 +530,8 @@
                 cat: 'ai',
                 icon: 'spark',
                 title: 'Amazon Bedrock',
-                sub: 'Claude · tool calling',
+                sub: 'alternativa (parámetro)',
+                planned: true,
               },
               {
                 id: 'dlq',
@@ -548,7 +549,7 @@
                 cat: 'sec',
                 icon: 'key',
                 title: 'Secrets Manager',
-                sub: 'TAVILY_API_KEY',
+                sub: 'keys LLM + Tavily',
               },
               {
                 id: 'dynamo',
@@ -565,8 +566,8 @@
                 y: row[3],
                 cat: 'obs',
                 icon: 'pulse',
-                title: 'CloudWatch + X-Ray',
-                sub: 'logs · trazas',
+                title: 'CloudWatch',
+                sub: 'logs · alarma DLQ',
               },
               {
                 id: 'tavily',
@@ -587,17 +588,38 @@
                 sub: 'páginas de empresas',
               },
               {
-                id: 'groq',
+                id: 'openrouter',
                 x: col.X,
                 y: row[3],
                 cat: 'ai',
                 icon: 'spark',
-                title: 'Groq (opcional)',
-                sub: 'alternativa de LLM',
-                planned: true,
+                title: 'OpenRouter',
+                sub: 'Claude Haiku 5.5',
+              },
+              {
+                id: 'cognito',
+                x: col.A,
+                y: row[3],
+                cat: 'sec',
+                icon: 'key',
+                title: 'Amazon Cognito',
+                sub: 'login · 1 usuario',
               },
             ],
             edges: [
+              {
+                id: 'e0',
+                pts: [
+                  [370, 214],
+                  [370, 450],
+                ],
+                badge: [370, 332],
+                label: 'valida token',
+                lx: 420,
+                ly: 300,
+                steps: [1],
+                dash: true,
+              },
               {
                 id: 'e1',
                 pts: [
@@ -656,6 +678,7 @@
                 ],
                 badge: [1140, 172],
                 steps: [4],
+                dash: true,
               },
               {
                 id: 'e6',
@@ -682,7 +705,16 @@
                 label: 'HTTPS saliente',
                 lx: 1280,
                 ly: 100,
-                steps: [5],
+                steps: [4, 5],
+              },
+              {
+                id: 'e7c',
+                pts: [
+                  [1360, 332],
+                  [1360, 482],
+                  [1395, 482],
+                ],
+                steps: [4],
               },
               {
                 id: 'e7b',
@@ -731,12 +763,12 @@
             ],
             steps: [
               {
-                title: 'Solicitud',
-                nodes: ['client', 'apigw'],
-                text: 'El CRM o el equipo comercial pide leads de un sector y una ubicación.',
+                title: 'Login y solicitud',
+                nodes: ['client', 'apigw', 'cognito'],
+                text: 'El usuario inicia sesión en Cognito y pide leads de un sector y una ubicación desde la app web o Swagger.',
                 points: [
-                  'POST /leads/search con API key; el usage plan aplica cuota y throttling por cliente.',
-                  'REST API (no HTTP API): las API keys y usage plans solo existen en REST.',
+                  'API Gateway valida el token de Cognito en cada llamada: sin login responde 401. Un único usuario, creado por el administrador.',
+                  'Throttling en el stage (2 solicitudes/s) para acotar el costo del LLM.',
                 ],
               },
               {
@@ -746,25 +778,25 @@
                 points: [
                   'Responde 202 + jobId en menos de un segundo.',
                   'El agente tarda minutos y API Gateway corta a los 29 s: por eso el flujo es asíncrono.',
-                  'Es la misma Lambda que ya existe; en producción POST /leads/search encola en lugar de ejecutar el agente.',
+                  'Es la misma app de la PoC con EXECUTION_MODE=async: POST /leads/search encola en lugar de ejecutar el agente.',
                 ],
               },
               {
                 title: 'Consumo controlado',
                 nodes: ['sqs', 'worker'],
-                text: 'SQS invoca al worker con lotes de 1 mensaje. El worker es la única pieza nueva: un handler que llama al mismo SearchLeadsUseCase.',
+                text: 'SQS invoca al worker (worker.ts) con lotes de 1 mensaje; ejecuta el mismo LeadAgent que la PoC.',
                 points: [
-                  'La concurrencia reservada de la Lambda es el techo real de llamadas simultáneas al LLM y a Tavily (sus rate limits).',
-                  'Visibilidad de la cola mayor que el timeout de la Lambda (15 min) para no duplicar trabajo.',
+                  'Máximo 2 ejecuciones en paralelo (ScalingConfig del evento SQS): techo de llamadas simultáneas al LLM y a Tavily. Con el límite de 10 de la cuenta no es posible reservar concurrencia.',
+                  'Visibilidad de la cola (16 min) mayor que el timeout del worker (15 min) para no duplicar trabajo.',
                 ],
               },
               {
                 title: 'Razonamiento (ReAct)',
-                nodes: ['worker', 'bedrock', 'secrets'],
-                text: 'El LeadAgent ejecuta el bucle ReAct: Claude decide en cada paso qué tool usar o cuándo terminar.',
+                nodes: ['worker', 'openrouter', 'bedrock', 'secrets'],
+                text: 'El LeadAgent ejecuta el bucle ReAct con Claude Haiku 5.5 vía OpenRouter: decide en cada paso qué tool usar o cuándo terminar.',
                 points: [
-                  'Bedrock se invoca con el rol IAM de la Lambda: sin API keys del LLM y con los datos dentro de AWS.',
-                  'La key de Tavily se lee de Secrets Manager (nunca en el código ni en variables en claro).',
+                  'Las keys de OpenRouter y Tavily se leen de Secrets Manager al iniciar el contenedor (nunca en el código ni en variables en claro).',
+                  'Bedrock queda como alternativa: LlmProvider=bedrock cambia el adaptador y los permisos IAM sin tocar código (requiere cuota y acceso a Claude en la cuenta).',
                 ],
               },
               {
@@ -772,7 +804,7 @@
                 nodes: ['worker', 'tavily', 'web'],
                 text: 'search_web y fetch_page salen por HTTPS hacia internet.',
                 points: [
-                  'Son las únicas dependencias fuera de AWS.',
+                  'Junto con OpenRouter, son las dependencias fuera de AWS.',
                   'Lambda fuera de VPC: salida directa sin NAT. Si se exige VPC: NAT Gateway + VPC endpoints para DynamoDB y Bedrock.',
                 ],
               },
@@ -782,7 +814,7 @@
                 text: 'save_lead valida con Zod y guarda con escritura condicional por dominio.',
                 points: [
                   'attribute_not_exists(id): un dominio nunca se duplica, ni entre ejecuciones simultáneas.',
-                  'Al terminar, el job pasa a DONE con el resumen (guardados, descartados y motivo).',
+                  'Al terminar, el job pasa a completed con el resumen (guardados, descartados y motivo).',
                 ],
               },
               {
@@ -790,8 +822,8 @@
                 nodes: ['client', 'apigw', 'api', 'dynamo'],
                 text: 'El cliente consulta el estado del job y los leads a través de la misma λ api.',
                 points: [
-                  'GET /jobs/{id}: estado y resumen de la ejecución.',
-                  'GET /leads: leads priorizados por qualificationScore (ya implementado).',
+                  'GET /jobs/{id}: estado (pending → running → completed | failed) y resumen; la app web lo consulta cada 4 s.',
+                  'GET /leads: leads priorizados por qualificationScore.',
                 ],
               },
               {
@@ -800,7 +832,7 @@
                 text: 'Los fallos no se pierden y cada paso del agente queda trazado.',
                 points: [
                   'Tras 3 intentos fallidos el mensaje va a la DLQ, con alarma en CloudWatch.',
-                  'Logs del razonamiento (tool, argumentos, resultado) y trazas X-Ray por jobId.',
+                  'Logs del razonamiento (tool, argumentos, resultado) por job en CloudWatch Logs, con retención de 14 días.',
                 ],
               },
             ],
@@ -808,32 +840,32 @@
               {
                 title: 'Dentro de AWS',
                 items: [
-                  'API Gateway y 2 Lambdas: api (NestJS) y agent-worker',
-                  'SQS + DLQ, DynamoDB, Bedrock (Claude) vía IAM',
-                  'Secrets Manager, CloudWatch y X-Ray',
+                  'API Gateway con Cognito y 2 Lambdas: api (NestJS) y agent-worker',
+                  'SQS + DLQ, DynamoDB, Secrets Manager',
+                  'CloudWatch Logs y alarma; Bedrock disponible por parámetro',
                 ],
               },
               {
                 title: 'Fuera de AWS',
                 items: [
-                  'Tavily: API de búsqueda (key en Secrets Manager)',
-                  'Sitios web públicos de las empresas (fetch_page)',
-                  'Groq: alternativa de LLM, intercambiable por configuración',
+                  'OpenRouter: el LLM (Claude Haiku 5.5)',
+                  'Tavily y los sitios web públicos de las empresas',
+                  'Todo por HTTPS saliente, con las keys en Secrets Manager',
                 ],
               },
               {
                 title: 'Por qué 2 Lambdas',
                 items: [
                   'api: corta, escala con el tráfico, solo DynamoDB y SQS',
-                  'agent-worker: minutos, Bedrock + Secrets + internet',
-                  'Su concurrencia reservada protege los rate limits; la cola absorbe picos',
+                  'agent-worker: minutos, LLM + Secrets + internet',
+                  'Máx. 2 en paralelo protege los rate limits; la cola absorbe picos',
                 ],
               },
             ],
           },
           poc: {
             subtitle:
-              'Lo que existe hoy en el repositorio y se ejecuta en local. El mismo núcleo queda listo para la propuesta de producción.',
+              'Ejecución local para desarrollo y pruebas: la misma base de código que corre en AWS, en modo síncrono.',
             zones: [
               { x: 20, y: 90, w: 200, h: 480, label: 'Evaluador', kind: 'ext' },
               { x: 240, y: 56, w: 1110, h: 534, label: 'Máquina local', kind: 'aws' },
@@ -892,8 +924,7 @@
                 cat: 'compute',
                 icon: 'lambda',
                 title: 'lambda.ts',
-                sub: 'sin desplegar',
-                planned: true,
+                sub: 'desplegado en AWS',
               },
               {
                 id: 'usecases',
@@ -1092,7 +1123,7 @@
                 text: 'HTTP, CLI y el handler Lambda reutilizan SearchLeadsUseCase.',
                 points: [
                   'El núcleo (agente, tools, dominio, puertos) es TypeScript puro: no conoce Nest ni los SDKs.',
-                  'lambda.ts está implementado y probado con eventos de API Gateway, pero no desplegado: es la futura λ api de producción.',
+                  'lambda.ts y worker.ts son los handlers del despliegue en AWS (modo async); en local la misma app corre en modo sync.',
                 ],
               },
               {
@@ -1138,11 +1169,11 @@
                 ],
               },
               {
-                title: 'Pendiente para producción',
+                title: 'Local vs. AWS',
                 items: [
-                  'Handler agent-worker (SQS), registro de jobs y GET /jobs/{id}',
-                  'Despliegue (SAM), IAM, Secrets Manager',
-                  'Acceso a Claude en Bedrock (cuenta empresarial)',
+                  'Local: EXECUTION_MODE=sync, POST /leads/search responde el resumen',
+                  'AWS: EXECUTION_MODE=async, 202 + jobId y worker por SQS',
+                  'Misma base de código; solo cambia la configuración',
                 ],
               },
               {
@@ -1432,7 +1463,7 @@
 
           if (s === 0) {
             $('detail-title').textContent =
-              state.mode === 'prod' ? 'Producción propuesta en AWS' : 'PoC implementada';
+              state.mode === 'prod' ? 'Producción en AWS (desplegada)' : 'PoC local';
             $('detail-text').textContent = m.subtitle;
             $('detail-points').innerHTML = m.steps
               .map((st, i) => `<li><strong>${i + 1}.</strong> ${st.title}</li>`)

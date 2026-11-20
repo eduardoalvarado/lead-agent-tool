@@ -1,38 +1,40 @@
-%% Lead Agent — arquitectura de PRODUCCIÓN propuesta en AWS (versión interactiva: docs/architecture.html)
+%% Lead Agent — arquitectura DESPLEGADA en AWS (versión interactiva: docs/architecture.html; IaC: infra/template.yaml)
 flowchart LR
-  client["Cliente / CRM"]
+  user["Usuario<br/><small>app web (GitHub Pages) · Swagger</small>"]
 
   subgraph aws["AWS Cloud · región us-east-2"]
     direction LR
-    apigw["API Gateway (REST)<br/><small>API key · usage plan</small>"]
-    api["λ api (NestJS · lambda.ts)<br/><small>POST /leads/search · GET /jobs/{id} · GET /leads</small>"]
+    cognito{{"Amazon Cognito<br/><small>login · 1 usuario</small>"}}
+    apigw["API Gateway (REST)<br/><small>autorizador Cognito · throttling</small>"]
+    api["λ api (NestJS · lambda.ts)<br/><small>EXECUTION_MODE=async</small>"]
     queue[["SQS jobs<br/><small>lote de 1 mensaje</small>"]]
     dlq[["SQS DLQ<br/><small>alarma</small>"]]
-    worker["λ agent-worker<br/><small>LeadAgent ReAct · concurrencia reservada</small>"]
-    bedrock["Amazon Bedrock<br/><small>Claude · tool calling (IAM)</small>"]
+    worker["λ agent-worker (worker.ts)<br/><small>LeadAgent ReAct · máx. 2 en paralelo</small>"]
     dynamo[("DynamoDB<br/><small>leads (PK dominio) + jobs</small>")]
-    secrets{{"Secrets Manager<br/><small>TAVILY_API_KEY</small>"}}
-    obs["CloudWatch + X-Ray"]
+    secrets{{"Secrets Manager<br/><small>keys LLM + Tavily</small>"}}
+    obs["CloudWatch Logs + alarma"]
+    bedrock["Amazon Bedrock<br/><small>alternativa: LlmProvider=bedrock</small>"]
   end
 
   subgraph ext["Internet · terceros"]
+    openrouter["OpenRouter<br/><small>Claude Haiku 5.5</small>"]
     tavily["Tavily API"]
     web["Sitios web de empresas"]
-    groq["Groq (alternativa de LLM)"]
   end
 
-  client -- "1 · POST /leads/search" --> apigw
+  user -- "1 · login" --> cognito
+  user -- "1 · POST /leads/search (Bearer)" --> apigw
+  apigw -. "1 · valida token" .-> cognito
   apigw -- 2 --> api
   api -- "2 · SendMessage" --> queue
-  api -- "2 · job PENDING / 7 · lectura" --> dynamo
+  api -- "2 · job pending / 7 · lectura" --> dynamo
   queue -- 3 --> worker
-  worker -- "4 · razonar" --> bedrock
+  worker -- "4 · razonar (HTTPS)" --> openrouter
+  worker -. "4 · alternativa" .-> bedrock
   worker -. "4 · GetSecretValue" .-> secrets
-  worker -- "5 · HTTPS saliente" --> tavily
+  worker -- "5 · search_web" --> tavily
   worker -- "5 · fetch_page" --> web
-  worker -- "6 · save_lead" --> dynamo
-  client -- "7 · GET /jobs/{id}" --> apigw
-  apigw -- 7 --> api
+  worker -- "6 · save_lead / job completed" --> dynamo
+  user -- "7 · GET /jobs/{id}" --> apigw
   queue -. "8 · tras 3 fallos" .-> dlq
-  worker -. "8 · logs y trazas" .-> obs
-  worker -. "opcional (LLMProvider)" .-> groq
+  worker -. "8 · logs" .-> obs

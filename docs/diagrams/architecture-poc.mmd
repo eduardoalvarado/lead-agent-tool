@@ -1,4 +1,4 @@
-%% Lead Agent — PoC IMPLEMENTADA (lo que existe hoy y corre en local)
+%% Lead Agent — ejecución LOCAL (modo síncrono; la misma base de código corre en AWS)
 flowchart LR
   swagger["Swagger / curl"]
   terminal["Terminal"]
@@ -7,7 +7,7 @@ flowchart LR
     subgraph node["Proceso Node.js 26 · NestJS"]
       controller["LeadsController<br/><small>HTTP síncrono :3000</small>"]
       cli["cli.ts<br/><small>npm run agent</small>"]
-      lambdah["lambda.ts<br/><small>listo · sin desplegar</small>"]
+      lambdah["lambda.ts · worker.ts<br/><small>handlers del despliegue en AWS</small>"]
       usecases["Casos de uso<br/><small>SearchLeads · ListLeads</small>"]
       agent["LeadAgent<br/><small>ReAct · 4 tools · mock en proceso</small>"]
     end
