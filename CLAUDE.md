@@ -31,7 +31,7 @@ Contexto para Claude Code. Léelo completo antes de escribir código.
 
 - **Node.js 26 LTS** (`"engines": { "node": ">=24.10" }`, por `process.loadEnvFile`), TypeScript estricto (`strict: true`).
 - **NestJS solo en la capa exterior** (ver regla de arquitectura). `@nestjs/swagger` para documentar la API. `@codegenie/serverless-express` para el handler Lambda (target `nodejs24.x`).
-- LLM: **agnóstico al proveedor** vía el puerto `LLMProvider`; conectar otro LLM = un adaptador nuevo + su registro en la configuración (`LLM_PROVIDER`), sin tocar el núcleo. Adaptadores: `GroqProvider` (por defecto en la PoC) y `BedrockProvider` (Claude vía Amazon Bedrock, endpoint `bedrock-mantle`; adaptador de producción, requiere que la cuenta AWS tenga acceso a modelos de Anthropic). Modelo configurable por env.
+- LLM: **agnóstico al proveedor** vía el puerto `LLMProvider`; conectar otro LLM = un adaptador nuevo + su registro en la configuración (`LLM_PROVIDER`), sin tocar el núcleo. Adaptadores: `OpenAICompatibleProvider` (presets `groq` por defecto, `ollama` local y `openai-compatible` genérico) y `BedrockProvider` (Claude vía Amazon Bedrock, endpoint `bedrock-mantle`; adaptador de producción, requiere que la cuenta AWS tenga acceso a modelos de Anthropic). Modelo configurable por env.
 - Búsqueda: puerto `SearchProvider`; adaptadores `TavilyProvider` y `MockSearchProvider` (datos realistas de Lima, Perú).
 - Validación: Zod (env, DTOs/requests, output del LLM).
 - DB: DynamoDB Local vía docker-compose, AWS SDK v3. Puerto `LeadRepository`; adaptador `DynamoLeadRepository`. PK = dominio normalizado del sitio web (dedupe).
@@ -60,7 +60,7 @@ src/app/             NestJS: config, módulos, controllers, providers/tokens, ma
 - Tools: `search_web(query)`, `fetch_page(url)` (opcional, contenido truncado), `save_lead(lead)`, `discard_lead(companyName, url, reason)`.
 - Guardas de flujo en código (`CandidateLedger`): no se busca de nuevo con resultados sin decidir ni se lee otra empresa con una leída sin decidir.
 - `save_lead` valida con el schema Zod de `core/domain`; si falla, devuelve el error como resultado del tool para que el LLM corrija (no lanzar excepción).
-- Guardas: `AGENT_MAX_ITERATIONS` (default 20), `AGENT_MAX_LEADS` (default 10), timeout por llamada. Determinismo: temperatura 0 donde el modelo lo admite (Groq); los modelos actuales de Claude no aceptan `temperature`, se usa `effort` + reglas del prompt.
+- Guardas: `AGENT_MAX_ITERATIONS` (default 20), `AGENT_MAX_LEADS` (default 10), timeout por llamada. Determinismo: temperatura 0 donde el modelo lo admite (APIs compatibles con OpenAI); los modelos actuales de Claude no aceptan `temperature`, se usa `effort` + reglas del prompt.
 - Loguear cada paso del razonamiento (tool elegido, argumentos, resumen del resultado) a través del puerto `Logger`; es parte de la demo.
 - El agente termina con un resumen: leads guardados, descartados y motivo.
 

@@ -21,7 +21,7 @@ import {
 // e2e de la capa HTTP: la app Nest real con su composition root; solo se reemplazan el LLM
 // (guion determinista) y el repositorio (en memoria). Búsqueda en modo mock, sin red.
 const TEST_CONFIG = loadAppConfig({
-  GROQ_API_KEY: 'test',
+  LLM_API_KEY: 'test',
   SEARCH_PROVIDER: 'mock',
   LOG_LEVEL: 'error',
 });

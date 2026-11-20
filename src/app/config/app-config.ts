@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+export const LLM_PROVIDERS = ['groq', 'ollama', 'openai-compatible', 'bedrock'] as const;
+
+const REQUIRES_API_KEY: ReadonlySet<string> = new Set(['groq', 'openai-compatible']);
+
 const positiveInt = (fallback: number) => z.coerce.number().int().positive().default(fallback);
 
 /** Variables de entorno de la aplicación, validadas al arrancar (falla rápido si falta algo). */
@@ -8,11 +12,13 @@ export const AppConfigSchema = z
     PORT: positiveInt(3000),
     LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 
-    LLM_PROVIDER: z.enum(['groq', 'bedrock']).default('groq'),
+    LLM_PROVIDER: z.enum(LLM_PROVIDERS).default('groq'),
     LLM_TIMEOUT_MS: positiveInt(60_000),
     LLM_MAX_RETRIES: z.coerce.number().int().min(0).default(2),
-    GROQ_API_KEY: z.string().optional(),
-    GROQ_MODEL: z.string().min(1).default('openai/gpt-oss-120b'),
+    // Proveedores compatibles con OpenAI (groq, ollama, openai-compatible).
+    LLM_API_KEY: z.string().optional(),
+    LLM_MODEL: z.string().min(1).optional(),
+    LLM_BASE_URL: z.url().optional(),
     AWS_REGION: z.string().min(1).default('us-east-2'),
     BEDROCK_MODEL: z.string().min(1).default('anthropic.claude-haiku-5-5'),
     BEDROCK_EFFORT: z.enum(['low', 'medium', 'high']).default('medium'),
@@ -28,10 +34,17 @@ export const AppConfigSchema = z
     AGENT_MAX_ITERATIONS: positiveInt(20),
     AGENT_MAX_LEADS: positiveInt(10),
   })
-  .refine((env) => env.LLM_PROVIDER !== 'groq' || Boolean(env.GROQ_API_KEY), {
-    message: 'GROQ_API_KEY es obligatoria con LLM_PROVIDER=groq',
-    path: ['GROQ_API_KEY'],
+  .refine((env) => !REQUIRES_API_KEY.has(env.LLM_PROVIDER) || Boolean(env.LLM_API_KEY), {
+    message: 'LLM_API_KEY es obligatoria con LLM_PROVIDER=groq u openai-compatible',
+    path: ['LLM_API_KEY'],
   })
+  .refine(
+    (env) => env.LLM_PROVIDER !== 'openai-compatible' || Boolean(env.LLM_BASE_URL && env.LLM_MODEL),
+    {
+      message: 'LLM_BASE_URL y LLM_MODEL son obligatorias con LLM_PROVIDER=openai-compatible',
+      path: ['LLM_BASE_URL'],
+    },
+  )
   .refine((env) => env.SEARCH_PROVIDER !== 'tavily' || Boolean(env.TAVILY_API_KEY), {
     message: 'TAVILY_API_KEY es obligatoria con SEARCH_PROVIDER=tavily',
     path: ['TAVILY_API_KEY'],

@@ -3,9 +3,10 @@ import { PageFetchError } from '../../src/core/domain/errors/page-fetch.error.js
 import { extractTitle, htmlToText } from '../../src/infrastructure/fetch/html-to-text.js';
 import { MockPageFetcher } from '../../src/infrastructure/fetch/mock-page-fetcher.js';
 import {
-  fromGroqToolCall,
-  toGroqMessage,
-} from '../../src/infrastructure/llm/groq-message.mapper.js';
+  extractReasoning,
+  fromApiToolCalls,
+  toApiMessage,
+} from '../../src/infrastructure/llm/openai-message.mapper.js';
 import { InMemoryLeadRepository } from '../../src/infrastructure/persistence/in-memory-lead-repository.js';
 import { MockSearchProvider } from '../../src/infrastructure/search/mock-search-provider.js';
 import { buildLead } from '../support/lead-fixtures.js';
@@ -57,9 +58,9 @@ describe('htmlToText', () => {
   });
 });
 
-describe('Groq message mapper', () => {
-  it('traduce mensajes de assistant con tool calls al formato de Groq', () => {
-    const message = toGroqMessage({
+describe('OpenAI message mapper', () => {
+  it('traduce mensajes de assistant con tool calls al formato de Chat Completions', () => {
+    const message = toApiMessage({
       role: 'assistant',
       content: null,
       toolCalls: [{ id: 'c1', name: 'search_web', arguments: '{"query":"x"}' }],
@@ -78,14 +79,20 @@ describe('Groq message mapper', () => {
   });
 
   it('traduce resultados de tool y tool calls de vuelta al núcleo', () => {
-    expect(toGroqMessage({ role: 'tool', toolCallId: 'c1', content: 'ok' })).toEqual({
+    expect(toApiMessage({ role: 'tool', toolCallId: 'c1', content: 'ok' })).toEqual({
       role: 'tool',
       tool_call_id: 'c1',
       content: 'ok',
     });
     expect(
-      fromGroqToolCall({ id: 'c1', type: 'function', function: { name: 'n', arguments: '{}' } }),
-    ).toEqual({ id: 'c1', name: 'n', arguments: '{}' });
+      fromApiToolCalls([{ id: 'c1', type: 'function', function: { name: 'n', arguments: '{}' } }]),
+    ).toEqual([{ id: 'c1', name: 'n', arguments: '{}' }]);
+  });
+
+  it('lee el razonamiento en los formatos de Groq y de Ollama/DeepSeek', () => {
+    expect(extractReasoning({ reasoning: 'a' })).toBe('a');
+    expect(extractReasoning({ reasoning_content: 'b' })).toBe('b');
+    expect(extractReasoning({ content: 'x' })).toBeNull();
   });
 });
 

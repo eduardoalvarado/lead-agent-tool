@@ -9,7 +9,7 @@ import { LlmProviderError } from '../../src/core/domain/errors/llm-provider.erro
 import { PersistenceError } from '../../src/core/domain/errors/persistence.error.js';
 import { SearchCriteriaSchema } from '../../src/core/domain/search-criteria.js';
 import { BedrockProvider } from '../../src/infrastructure/llm/bedrock-provider.js';
-import { GroqProvider } from '../../src/infrastructure/llm/groq-provider.js';
+import { OpenAICompatibleProvider } from '../../src/infrastructure/llm/openai-compatible-provider.js';
 
 describe('httpStatusFor', () => {
   it.each([
@@ -38,10 +38,12 @@ describe('ZodValidationPipe', () => {
 
 describe('LLM_ADAPTERS', () => {
   it('crea el adaptador elegido en la configuración', () => {
-    const groq = loadAppConfig({ GROQ_API_KEY: 'k' });
+    const groq = loadAppConfig({ LLM_API_KEY: 'k' });
+    const ollama = loadAppConfig({ LLM_PROVIDER: 'ollama' });
     const bedrock = loadAppConfig({ LLM_PROVIDER: 'bedrock' });
 
-    expect(LLM_ADAPTERS.groq.create(groq)).toBeInstanceOf(GroqProvider);
+    expect(LLM_ADAPTERS.groq.create(groq)).toBeInstanceOf(OpenAICompatibleProvider);
+    expect(LLM_ADAPTERS.ollama.create(ollama)).toBeInstanceOf(OpenAICompatibleProvider);
     expect(LLM_ADAPTERS.bedrock.create(bedrock)).toBeInstanceOf(BedrockProvider);
   });
 

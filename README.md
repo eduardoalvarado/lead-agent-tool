@@ -29,7 +29,7 @@ Hoy la prospección es manual: un vendedor busca "clínicas dentales en Lima", e
 | Lead sin sitio web | Se **descarta**: la PK es el dominio normalizado del sitio (deduplicación) y un lead B2B sin web tiene bajo valor comercial. Queda en el resumen del agente como descartado con su motivo. |
 | ¿Endpoint síncrono o asíncrono? | En la PoC, `POST /leads/search` es **síncrono** (devuelve el resumen al terminar) y `GET /leads` lista los leads guardados. En producción el flujo es asíncrono (`202` + `jobId`, ver 3.2). |
 | ¿Cuántas Lambdas en producción? | **Dos**, apegadas al código: `api` (la app NestJS completa, el `lambda.ts` ya implementado) y `agent-worker` (consume SQS y ejecuta el mismo caso de uso). Separar API y worker es necesario (duración, concurrencia y permisos IAM opuestos); separar más la API no aporta valor. |
-| ¿Qué LLM usa la PoC? | El LLM es **intercambiable** por configuración (`LLM_PROVIDER`). La PoC usa **Groq** (`openai/gpt-oss-120b`) porque Claude en Amazon Bedrock requiere que Anthropic autorice la cuenta AWS (cuentas empresariales). `BedrockProvider` está implementado y testeado, y es el proveedor objetivo de producción. |
+| ¿Qué LLM usa la PoC? | El LLM es **intercambiable** por configuración (`LLM_PROVIDER`): un adaptador genérico compatible con OpenAI cubre Groq, Ollama (local) y cualquier otro proveedor compatible; `BedrockProvider` cubre Claude en AWS. La PoC usa **Groq** (`openai/gpt-oss-120b`): la cuenta AWS disponible tiene cuota 0 en Bedrock para todos los modelos (ampliarla requiere un caso con AWS Support) y Claude además exige autorización de Anthropic. `BedrockProvider` está implementado y testeado, y es el proveedor objetivo de producción. |
 | ¿Interfaz frontend? | **Fuera de alcance**: no es entregable ni criterio de evaluación. Se expone **Swagger** (`/docs`) para probar la API y la CLI muestra el razonamiento del agente. |
 
 ---
@@ -38,7 +38,7 @@ Hoy la prospección es manual: un vendedor busca "clínicas dentales en Lima", e
 
 ### 3.1 Principio: núcleo independiente del framework
 
-El **núcleo** (dominio, puertos/interfaces, agente, tools y casos de uso) son **clases TypeScript puras**: no importan `@nestjs/*` ni SDKs de terceros. **NestJS vive solo en la capa exterior**: controllers, módulos y conexión de dependencias (composition root). Los adaptadores (Groq, Bedrock, Tavily, DynamoDB) también son clases puras que implementan los puertos; Nest únicamente los instancia e inyecta.
+El **núcleo** (dominio, puertos/interfaces, agente, tools y casos de uso) son **clases TypeScript puras**: no importan `@nestjs/*` ni SDKs de terceros. **NestJS vive solo en la capa exterior**: controllers, módulos y conexión de dependencias (composition root). Los adaptadores (LLM compatible con OpenAI, Bedrock, Tavily, DynamoDB) también son clases puras que implementan los puertos; Nest únicamente los instancia e inyecta.
 
 Beneficios: el agente se testea sin levantar Nest, el framework y el LLM son reemplazables y el mismo núcleo se reutiliza en HTTP, CLI y Lambda.
 
@@ -59,8 +59,8 @@ Beneficios: el agente se testea sin levantar Nest, el framework y el LLM son ree
 └───────────────────────────────▲─────────────────────────────────────────┘
                                 │ implementan los puertos
 ┌───────────────────────────────┴──── Adaptadores (TS puro) ──────────────┐
-│  GroqProvider · BedrockProvider · TavilyProvider · MockSearchProvider   │
-│  HttpPageFetcher · MockPageFetcher · DynamoLeadRepository · ConsoleLogger│
+│  OpenAICompatibleProvider (Groq·Ollama·…) · BedrockProvider · Tavily    │
+│  MockSearch · HttpPageFetcher · MockPageFetcher · DynamoLeadRepository  │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -103,7 +103,7 @@ src/
 │   ├── agent/                    # LeadAgent (bucle ReAct), AgentRun, CandidateLedger, prompts/, tools/
 │   └── application/              # SearchLeadsUseCase, ListLeadsUseCase
 ├── infrastructure/               # TS puro — adaptadores que implementan los puertos
-│   ├── llm/                      # GroqProvider, BedrockProvider y sus mappers
+│   ├── llm/                      # OpenAICompatibleProvider, BedrockProvider y sus mappers
 │   ├── search/                   # TavilyProvider, MockSearchProvider (dataset ficticio de Lima)
 │   ├── fetch/                    # HttpPageFetcher, MockPageFetcher, html-to-text
 │   ├── persistence/              # DynamoLeadRepository, InMemoryLeadRepository, definición de la tabla
@@ -135,7 +135,7 @@ La regla de dependencias entre capas se hace cumplir dos veces, con una sola fue
 | Lenguaje | TypeScript estricto, ESM | Tipado end-to-end. ESM porque NestJS 12 se distribuye solo como ESM. |
 | Framework | NestJS 12 (solo capa exterior) | Módulos y DI expresan la separación de capas; el núcleo queda agnóstico. Trade-off: cold start en Lambda (ver limitaciones). |
 | Agente | Bucle ReAct propio sobre tool calling (`LeadAgent`) | Control total y transparente del razonamiento; guardas deterministas en código; sin la caja negra de un framework. Alternativa: LangGraph.js. |
-| LLM (PoC) | Groq · `openai/gpt-oss-120b` | Gratis y rápido. Elegido tras probar: `llama-3.3-70b-versatile` ya no está disponible y `qwen3.8-27b` ignoraba los resultados de los tools. |
+| LLM (PoC) | Groq · `openai/gpt-oss-120b`, vía `OpenAICompatibleProvider` | Gratis y rápido. Elegido tras probar: `llama-3.3-70b-versatile` ya no está disponible y `qwen3.8-27b` ignoraba los resultados de los tools. El mismo adaptador sirve para Ollama (local) u otros proveedores compatibles con OpenAI, solo cambiando la configuración. |
 | LLM (producción) | Claude vía Amazon Bedrock (`BedrockProvider`) | IAM en lugar de API keys, datos dentro de AWS, facturación y monitoreo centralizados (clave en fintech). Modelo configurable (`BEDROCK_MODEL`, por defecto `anthropic.claude-haiku-5-5`). |
 | Búsqueda | Tavily + `MockSearchProvider` | Tavily devuelve contenido limpio para LLMs; el mock permite demos y tests sin key ni red. |
 | Validación | Zod | Un solo esquema para el output del LLM (y el JSON Schema de los tools), el entorno y los requests. |
@@ -181,7 +181,7 @@ El LLM solo aporta los datos extraídos de la fuente. `id` (dominio normalizado)
 ```bash
 # Requisitos: Node >=24.10 (recomendado 26), Docker
 git clone <url-del-repositorio> && cd <directorio>
-cp .env.example .env          # completar GROQ_API_KEY (y TAVILY_API_KEY para búsqueda real)
+cp .env.example .env          # completar LLM_API_KEY (key de Groq) y, para búsqueda real, TAVILY_API_KEY
 npm install
 docker compose up -d          # DynamoDB Local en :8000
 npm run db:init               # crea la tabla (idempotente)
@@ -208,15 +208,18 @@ npm run lint && npm run build
 
 Las variables pasadas en la línea de comandos tienen prioridad sobre el `.env`. El modo mock solo requiere la key del LLM.
 
+**Otro LLM sin tocar código:** `LLM_PROVIDER=ollama` usa un modelo local (requiere [Ollama](https://ollama.com) con un modelo con tool calling, p. ej. `ollama pull qwen3:8b`); `LLM_PROVIDER=openai-compatible` con `LLM_BASE_URL`, `LLM_MODEL` y `LLM_API_KEY` usa cualquier API compatible con OpenAI (OpenRouter, Gemini, Cerebras…).
+
 ### Variables de entorno
 
 | Variable | Descripción | Default |
 |---|---|---|
 | `PORT` | Puerto HTTP | `3000` |
 | `LOG_LEVEL` | `debug` \| `info` \| `warn` \| `error` | `info` |
-| `LLM_PROVIDER` | `groq` \| `bedrock` | `groq` |
+| `LLM_PROVIDER` | `groq` \| `ollama` \| `openai-compatible` \| `bedrock` | `groq` |
 | `LLM_TIMEOUT_MS` / `LLM_MAX_RETRIES` | Timeout y reintentos por llamada al LLM | `60000` / `2` |
-| `GROQ_API_KEY` / `GROQ_MODEL` | Key y modelo de Groq (key obligatoria con `groq`) | — / `openai/gpt-oss-120b` |
+| `LLM_PROVIDER` presets | `groq` (`https://api.groq.com/openai/v1`, `openai/gpt-oss-120b`) · `ollama` (`http://localhost:11434/v1`, `qwen3:8b`) · `openai-compatible` (sin defaults) | — |
+| `LLM_API_KEY` / `LLM_MODEL` / `LLM_BASE_URL` | Key, modelo y URL del proveedor compatible con OpenAI; sobrescriben los defaults del preset. Key obligatoria con `groq` y `openai-compatible`; URL y modelo obligatorios con `openai-compatible` | — |
 | `AWS_REGION` | Región de Bedrock y DynamoDB | `us-east-2` |
 | `BEDROCK_MODEL` / `BEDROCK_EFFORT` / `BEDROCK_MAX_TOKENS` | Modelo de Claude en Bedrock, esfuerzo y tokens máximos | `anthropic.claude-haiku-5-5` / `medium` / `16000` |
 | `SEARCH_PROVIDER` | `tavily` \| `mock` | `mock` |
@@ -237,7 +240,7 @@ Bedrock usa la cadena estándar de credenciales de AWS (perfil, `aws login`, rol
 - Salida estructurada vía el schema del tool `save_lead` (JSON Schema generado desde Zod, con descripciones por campo) + validación Zod: el error vuelve al LLM para que se corrija.
 - Defensa en profundidad en código: el sitio web no puede ser una red social o un directorio conocido, y los campos de contexto los asigna el código, no el LLM.
 - Guardas de flujo deterministas (`CandidateLedger`): no se busca de nuevo con resultados sin decidir ni se lee otra empresa con una leída sin decidir; aviso explícito cuando una búsqueda no trae novedades.
-- Máximo de iteraciones y de leads por ejecución. Temperatura 0 donde el modelo lo admite (Groq); los modelos actuales de Claude no aceptan `temperature` y se controlan con `effort`.
+- Máximo de iteraciones y de leads por ejecución. Temperatura 0 donde el modelo lo admite (APIs compatibles con OpenAI); los modelos actuales de Claude no aceptan `temperature` y se controlan con `effort`.
 
 ---
 
@@ -246,7 +249,7 @@ Bedrock usa la cadena estándar de credenciales de AWS (perfil, `aws login`, rol
 **Limitaciones actuales de la PoC**
 
 - **Flujo asíncrono no implementado:** el endpoint es síncrono y puede tardar minutos; falta el worker SQS, el registro de jobs y `GET /jobs/{id}` (ver 3.2).
-- **LLM en free tier:** Groq limita a 8.000 tokens/minuto y 200.000 tokens/día; por eso se compactan las observaciones antiguas del historial y las ejecuciones reales por día son pocas. Claude en Bedrock requiere una cuenta AWS autorizada por Anthropic.
+- **LLM en free tier:** Groq limita a 8.000 tokens/minuto y 200.000 tokens/día; por eso se compactan las observaciones antiguas del historial y las ejecuciones reales por día son pocas. La cuenta AWS disponible tiene cuota 0 en Bedrock (no ajustable desde la consola) y Claude además exige autorización de Anthropic.
 - **Modelo open source:** `gpt-oss-120b` emite un tool call por turno y tiende a postergar decisiones; las guardas de flujo lo compensan, pero un modelo con tool calling paralelo (Claude) necesitaría menos iteraciones.
 - **Dataset mock:** cubre dos sectores (agencias de marketing y clínicas dentales en Lima); otros sectores devuelven cero resultados en modo mock.
 - **Lectura de páginas simple:** conversión HTML → texto sin render de JavaScript.

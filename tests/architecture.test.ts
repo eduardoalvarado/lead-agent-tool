@@ -4,16 +4,16 @@ import { findViolations, scanLayer } from './support/dependency-rules.js';
 
 const SRC_ROOT = path.resolve(import.meta.dirname, '../src');
 const coreFile = path.join(SRC_ROOT, 'core/agent/lead-agent.ts');
-const infraFile = path.join(SRC_ROOT, 'infrastructure/llm/groq-provider.ts');
+const infraFile = path.join(SRC_ROOT, 'infrastructure/llm/openai-compatible-provider.ts');
 
 describe('Regla de dependencias entre capas', () => {
   describe('detector de violaciones', () => {
     it('detecta Nest, SDKs y capas exteriores importados desde el núcleo', () => {
       const source = [
         "import { Injectable } from '@nestjs/common';",
-        "import Groq from 'groq-sdk';",
+        "import OpenAI from 'openai';",
         "import { DynamoDBClient } from '@aws-sdk/client-dynamodb';",
-        "import { GroqProvider } from '../../infrastructure/llm/groq-provider.js';",
+        "import { OpenAICompatibleProvider } from '../../infrastructure/llm/openai-compatible-provider.js';",
         "import { AppModule } from '../../app/app.module.js';",
       ].join('\n');
 
@@ -31,7 +31,7 @@ describe('Regla de dependencias entre capas', () => {
 
     it('permite a infraestructura usar SDKs y puertos del núcleo, pero no Nest ni app', () => {
       const source = [
-        "import Groq from 'groq-sdk';",
+        "import OpenAI from 'openai';",
         "import type { LLMProvider } from '../../core/ports/llm-provider.js';",
         "import { Injectable } from '@nestjs/common';",
         "import { AppModule } from '../../app/app.module.js';",

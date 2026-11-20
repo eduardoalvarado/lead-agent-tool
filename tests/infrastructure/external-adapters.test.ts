@@ -4,20 +4,20 @@ import { PageFetchError } from '../../src/core/domain/errors/page-fetch.error.js
 import { SearchProviderError } from '../../src/core/domain/errors/search-provider.error.js';
 import { HttpPageFetcher } from '../../src/infrastructure/fetch/http-page-fetcher.js';
 import { BedrockProvider } from '../../src/infrastructure/llm/bedrock-provider.js';
-import { GroqProvider } from '../../src/infrastructure/llm/groq-provider.js';
+import { OpenAICompatibleProvider } from '../../src/infrastructure/llm/openai-compatible-provider.js';
 import { TavilyProvider } from '../../src/infrastructure/search/tavily-provider.js';
 
 // Los SDKs externos se reemplazan: estos tests verifican el contrato del adaptador
 // (mapeo de respuestas y traducción de errores a errores de dominio), no el SDK.
 const sdk = vi.hoisted(() => ({
-  groqCreate: vi.fn(),
+  chatCreate: vi.fn(),
   bedrockCreate: vi.fn(),
   tavilySearch: vi.fn(),
 }));
 
-vi.mock('groq-sdk', () => ({
+vi.mock('openai', () => ({
   default: class {
-    chat = { completions: { create: sdk.groqCreate } };
+    chat = { completions: { create: sdk.chatCreate } };
   },
 }));
 vi.mock('@anthropic-ai/bedrock-sdk', () => ({
@@ -34,11 +34,18 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('GroqProvider', () => {
-  const groq = new GroqProvider({ apiKey: 'k', model: 'm', timeoutMs: 1, maxRetries: 0 });
+describe('OpenAICompatibleProvider', () => {
+  const llm = new OpenAICompatibleProvider({
+    baseURL: 'https://api.groq.com/openai/v1',
+    apiKey: 'k',
+    model: 'm',
+    timeoutMs: 1,
+    maxRetries: 0,
+    extraParams: { include_reasoning: true },
+  });
 
   it('mapea texto, razonamiento y tool calls', async () => {
-    sdk.groqCreate.mockReturnValue(
+    sdk.chatCreate.mockReturnValue(
       Promise.resolve({
         choices: [
           {
@@ -54,7 +61,7 @@ describe('GroqProvider', () => {
       }),
     );
 
-    expect(await groq.complete(request)).toEqual({
+    expect(await llm.complete(request)).toEqual({
       content: null,
       reasoning: 'Busco.',
       toolCalls: [{ id: 'c1', name: 'search_web', arguments: '{}' }],
@@ -62,9 +69,22 @@ describe('GroqProvider', () => {
   });
 
   it('traduce errores del SDK a LlmProviderError', async () => {
-    sdk.groqCreate.mockReturnValue(Promise.reject(new Error('429 rate limit')));
+    sdk.chatCreate.mockReturnValue(Promise.reject(new Error('429 rate limit')));
 
-    await expect(groq.complete(request)).rejects.toThrow(LlmProviderError);
+    await expect(llm.complete(request)).rejects.toThrow(LlmProviderError);
+  });
+
+  it('envía temperatura 0, tool_choice auto y los parámetros propios del preset', async () => {
+    sdk.chatCreate.mockReturnValue(Promise.resolve({ choices: [{ message: { content: 'ok' } }] }));
+
+    await llm.complete(request);
+
+    expect(sdk.chatCreate.mock.calls[0]?.[0]).toMatchObject({
+      model: 'm',
+      temperature: 0,
+      tool_choice: 'auto',
+      include_reasoning: true,
+    });
   });
 });
 

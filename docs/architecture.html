@@ -948,7 +948,7 @@
                 cat: 'ai',
                 icon: 'spark',
                 title: 'Groq',
-                sub: 'por defecto',
+                sub: 'por defecto · API OpenAI',
               },
               {
                 id: 'bedrock',
@@ -1100,7 +1100,7 @@
                 nodes: ['agent', 'groq', 'bedrock'],
                 text: 'El agente habla con el puerto LLMProvider; el adaptador se elige con LLM_PROVIDER.',
                 points: [
-                  'Groq por defecto (la cuenta AWS no tiene acceso a Claude en Bedrock).',
+                  'Groq por defecto vía OpenAICompatibleProvider (también sirve para Ollama u otros compatibles); la cuenta AWS tiene cuota 0 en Bedrock.',
                   'BedrockProvider está implementado y testeado; en producción es el proveedor objetivo.',
                 ],
               },
