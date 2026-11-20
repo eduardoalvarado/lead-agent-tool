@@ -1,0 +1,38 @@
+%% Lead Agent — arquitectura de PRODUCCIÓN propuesta en AWS (versión interactiva: docs/architecture.html)
+flowchart LR
+  client["Cliente / CRM"]
+
+  subgraph aws["AWS Cloud · región us-east-2"]
+    direction LR
+    apigw["API Gateway (REST)<br/><small>API key · usage plan</small>"]
+    api["λ api (NestJS · lambda.ts)<br/><small>POST /leads/search · GET /jobs/{id} · GET /leads</small>"]
+    queue[["SQS jobs<br/><small>lote de 1 mensaje</small>"]]
+    dlq[["SQS DLQ<br/><small>alarma</small>"]]
+    worker["λ agent-worker<br/><small>LeadAgent ReAct · concurrencia reservada</small>"]
+    bedrock["Amazon Bedrock<br/><small>Claude · tool calling (IAM)</small>"]
+    dynamo[("DynamoDB<br/><small>leads (PK dominio) + jobs</small>")]
+    secrets{{"Secrets Manager<br/><small>TAVILY_API_KEY</small>"}}
+    obs["CloudWatch + X-Ray"]
+  end
+
+  subgraph ext["Internet · terceros"]
+    tavily["Tavily API"]
+    web["Sitios web de empresas"]
+    groq["Groq (alternativa de LLM)"]
+  end
+
+  client -- "1 · POST /leads/search" --> apigw
+  apigw -- 2 --> api
+  api -- "2 · SendMessage" --> queue
+  api -- "2 · job PENDING / 7 · lectura" --> dynamo
+  queue -- 3 --> worker
+  worker -- "4 · razonar" --> bedrock
+  worker -. "4 · GetSecretValue" .-> secrets
+  worker -- "5 · HTTPS saliente" --> tavily
+  worker -- "5 · fetch_page" --> web
+  worker -- "6 · save_lead" --> dynamo
+  client -- "7 · GET /jobs/{id}" --> apigw
+  apigw -- 7 --> api
+  queue -. "8 · tras 3 fallos" .-> dlq
+  worker -. "8 · logs y trazas" .-> obs
+  worker -. "opcional (LLMProvider)" .-> groq

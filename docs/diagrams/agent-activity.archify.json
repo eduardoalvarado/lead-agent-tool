@@ -1,0 +1,325 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Lead Agent — Diagrama de actividades del bucle ReAct",
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "ciclo",
+        "label": "Ciclo ReAct",
+        "focus": [
+          "validate",
+          "think",
+          "act",
+          "tools",
+          "observe",
+          "guard"
+        ],
+        "note": "Pensar → actuar con un tool → observar el resultado → repetir hasta terminar."
+      },
+      {
+        "id": "efectos",
+        "label": "Tools y servicios",
+        "focus": [
+          "act",
+          "tools",
+          "tavily",
+          "dynamo",
+          "observe"
+        ],
+        "note": "Los tools validan con Zod, imponen el orden de decisión y hablan con Tavily y DynamoDB."
+      },
+      {
+        "id": "cierre",
+        "label": "Cierre y cortes",
+        "focus": [
+          "think",
+          "guard",
+          "llm",
+          "llmerror",
+          "summary"
+        ],
+        "note": "El agente termina por decisión propia, por una guarda o por un fallo del LLM sin perder lo guardado."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "agente",
+      "label": "LeadAgent (bucle ReAct)"
+    },
+    {
+      "id": "herramientas",
+      "label": "Tools y observación"
+    },
+    {
+      "id": "externos",
+      "label": "Servicios externos"
+    }
+  ],
+  "phases": [
+    {
+      "id": "inicio",
+      "label": "Entrada",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "bucle",
+      "label": "Thought → Action → Observation",
+      "fromCol": 2,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "fin",
+      "label": "Cierre",
+      "fromCol": 5,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "input",
+    "validate",
+    "think",
+    "act",
+    "tools",
+    "observe",
+    "guard",
+    "summary"
+  ],
+  "nodes": [
+    {
+      "id": "input",
+      "lane": "agente",
+      "col": 0,
+      "type": "external",
+      "label": "Sector + ubicación",
+      "sublabel": "HTTP · CLI · SQS",
+      "width": 140
+    },
+    {
+      "id": "summary",
+      "lane": "agente",
+      "col": 5,
+      "type": "frontend",
+      "label": "Resumen final",
+      "sublabel": "guardados · descartes",
+      "width": 140
+    },
+    {
+      "id": "validate",
+      "lane": "agente",
+      "col": 1,
+      "type": "security",
+      "label": "Validar criterios",
+      "sublabel": "Zod + jobId",
+      "width": 140
+    },
+    {
+      "id": "think",
+      "lane": "agente",
+      "col": 2,
+      "type": "backend",
+      "label": "LLM razona",
+      "sublabel": "elige tool o termina",
+      "width": 140
+    },
+    {
+      "id": "act",
+      "lane": "agente",
+      "col": 3,
+      "type": "backend",
+      "label": "Ejecutar tool",
+      "sublabel": "args JSON validados",
+      "width": 140
+    },
+    {
+      "id": "observe",
+      "lane": "herramientas",
+      "col": 4,
+      "type": "backend",
+      "label": "Observación",
+      "sublabel": "resultado al historial",
+      "width": 140
+    },
+    {
+      "id": "guard",
+      "lane": "agente",
+      "col": 4,
+      "type": "security",
+      "label": "Guardas",
+      "sublabel": "iteraciones · leads",
+      "width": 140
+    },
+    {
+      "id": "tools",
+      "lane": "herramientas",
+      "col": 3,
+      "type": "messagebus",
+      "label": "search · fetch",
+      "sublabel": "save · discard",
+      "tag": "CandidateLedger",
+      "width": 140
+    },
+    {
+      "id": "llm",
+      "lane": "externos",
+      "col": 2,
+      "type": "cloud",
+      "label": "LLM provider",
+      "sublabel": "Groq · Bedrock",
+      "width": 140
+    },
+    {
+      "id": "tavily",
+      "lane": "externos",
+      "col": 3,
+      "type": "external",
+      "label": "Tavily / mock",
+      "sublabel": "búsqueda web",
+      "width": 140
+    },
+    {
+      "id": "dynamo",
+      "lane": "externos",
+      "col": 4,
+      "type": "database",
+      "label": "DynamoDB",
+      "sublabel": "dedupe por dominio",
+      "width": 140
+    },
+    {
+      "id": "llmerror",
+      "lane": "externos",
+      "col": 1,
+      "type": "security",
+      "label": "llm_error",
+      "sublabel": "conserva lo avanzado",
+      "width": 140
+    }
+  ],
+  "edges": [
+    {
+      "id": "request",
+      "from": "input",
+      "to": "validate",
+      "variant": "emphasis"
+    },
+    {
+      "id": "start-loop",
+      "from": "validate",
+      "to": "think",
+      "variant": "emphasis"
+    },
+    {
+      "id": "call-llm",
+      "from": "think",
+      "to": "llm",
+      "label": "complete()",
+      "variant": "dashed",
+      "role": "async"
+    },
+    {
+      "id": "tool-call",
+      "from": "think",
+      "to": "act",
+      "label": "tool_calls",
+      "variant": "emphasis"
+    },
+    {
+      "id": "run-tool",
+      "from": "act",
+      "to": "tools",
+      "variant": "emphasis"
+    },
+    {
+      "id": "search",
+      "from": "tools",
+      "to": "tavily",
+      "label": "search_web",
+      "variant": "dashed"
+    },
+    {
+      "id": "save",
+      "from": "tools",
+      "to": "dynamo",
+      "label": "save_lead",
+      "variant": "dashed"
+    },
+    {
+      "id": "result",
+      "from": "tools",
+      "to": "observe",
+      "label": "resultado o error",
+      "variant": "emphasis"
+    },
+    {
+      "id": "check-guards",
+      "from": "observe",
+      "to": "guard",
+      "variant": "emphasis"
+    },
+    {
+      "id": "continue",
+      "from": "guard",
+      "to": "think",
+      "label": "continuar",
+      "variant": "dashed",
+      "role": "return",
+      "route": "up-channel"
+    },
+    {
+      "id": "limit",
+      "from": "guard",
+      "to": "summary",
+      "label": "límite",
+      "variant": "emphasis"
+    },
+    {
+      "id": "final-answer",
+      "from": "think",
+      "to": "summary",
+      "label": "sin tool calls",
+      "role": "branch",
+      "route": "up-channel"
+    },
+    {
+      "id": "llm-fails",
+      "from": "llm",
+      "to": "llmerror",
+      "label": "429 · timeout",
+      "variant": "security",
+      "role": "error"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "El LLM decide",
+      "items": [
+        "Cuándo buscar, leer, guardar o descartar",
+        "Cuándo terminar con su propio resumen"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "El código garantiza",
+      "items": [
+        "Validación Zod: el error vuelve al LLM para corregir",
+        "Decidir lo encontrado antes de buscar más"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Cortes controlados",
+      "items": [
+        "Máximo de iteraciones y de leads",
+        "Fallo del LLM: llm_error con resumen parcial"
+      ]
+    }
+  ]
+}

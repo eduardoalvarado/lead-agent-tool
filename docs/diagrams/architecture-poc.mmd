@@ -1,0 +1,35 @@
+%% Lead Agent — PoC IMPLEMENTADA (lo que existe hoy y corre en local)
+flowchart LR
+  swagger["Swagger / curl"]
+  terminal["Terminal"]
+
+  subgraph local["Máquina local"]
+    subgraph node["Proceso Node.js 26 · NestJS"]
+      controller["LeadsController<br/><small>HTTP síncrono :3000</small>"]
+      cli["cli.ts<br/><small>npm run agent</small>"]
+      lambdah["lambda.ts<br/><small>listo · sin desplegar</small>"]
+      usecases["Casos de uso<br/><small>SearchLeads · ListLeads</small>"]
+      agent["LeadAgent<br/><small>ReAct · 4 tools · mock en proceso</small>"]
+    end
+    subgraph docker["Docker"]
+      dynamo[("DynamoDB Local :8000")]
+    end
+  end
+
+  subgraph ext["Servicios externos"]
+    groq["Groq<br/><small>LLM por defecto</small>"]
+    bedrock["Amazon Bedrock<br/><small>adaptador listo · sin acceso</small>"]
+    tavily["Tavily API<br/><small>opcional</small>"]
+    web["Sitios web"]
+  end
+
+  swagger --> controller --> usecases
+  terminal --> cli --> usecases
+  lambdah -.-> usecases
+  usecases --> agent
+  agent -- LLMProvider --> groq
+  agent -. "LLM_PROVIDER=bedrock" .-> bedrock
+  agent -. "SEARCH_PROVIDER=tavily" .-> tavily
+  agent -. fetch_page .-> web
+  agent -- save_lead --> dynamo
+  usecases -- "GET /leads" --> dynamo

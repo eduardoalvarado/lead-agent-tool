@@ -10,9 +10,9 @@ Hoy la prospección es manual: un vendedor busca "clínicas dentales en Lima", e
 
 1. Recibe `sector` + `ubicación` (CLI o endpoint HTTP).
 2. El LLM decide qué buscar y ejecuta búsquedas web (tool calling).
-3. Analiza los resultados, descarta lo que no es una empresa real del sector.
+3. Analiza los resultados y descarta lo que no es una empresa real del sector, registrando el motivo.
 4. **Extrae** datos estructurados (JSON validado).
-5. **Cualifica** cada lead: estima qué tan probable es que sea un cliente útil para priorizar el contacto.
+5. **Cualifica** cada lead: estima qué tan útil es para el equipo comercial, para priorizar el contacto.
 6. Decide guardar cada lead válido en la base de datos (deduplicado por dominio).
 
 ---
@@ -26,8 +26,10 @@ Hoy la prospección es manual: un vendedor busca "clínicas dentales en Lima", e
 | "Sector" es input y output | En la salida se guarda `subSector` detectado (ej. "Ortodoncia" dentro de "Clínicas dentales"), además del sector solicitado. |
 | "Posibles datos de contacto" invita a alucinar | Solo se guardan contactos que aparezcan **literalmente** en la fuente; si no, `null`. `sourceUrl` es obligatorio. |
 | B2C implica datos personales | Foco en **B2B**. Tratamiento de datos personales (Ley 29733, Perú) queda documentado en limitaciones. |
-| Lead sin sitio web | Se **descarta**: la PK es el dominio normalizado del sitio (deduplicación) y un lead B2B sin web tiene bajo valor comercial. Queda reflejado en el resumen del agente como descartado con su motivo. |
-| ¿Endpoint síncrono o asíncrono? | En la PoC local, `POST /leads/search` es **síncrono** (devuelve el resumen al terminar) y `GET /leads` lista los leads guardados para verificar el almacenamiento. En producción el flujo es asíncrono (`202` + `jobId`, ver 3.2). |
+| Lead sin sitio web | Se **descarta**: la PK es el dominio normalizado del sitio (deduplicación) y un lead B2B sin web tiene bajo valor comercial. Queda en el resumen del agente como descartado con su motivo. |
+| ¿Endpoint síncrono o asíncrono? | En la PoC, `POST /leads/search` es **síncrono** (devuelve el resumen al terminar) y `GET /leads` lista los leads guardados. En producción el flujo es asíncrono (`202` + `jobId`, ver 3.2). |
+| ¿Cuántas Lambdas en producción? | **Dos**, apegadas al código: `api` (la app NestJS completa, el `lambda.ts` ya implementado) y `agent-worker` (consume SQS y ejecuta el mismo caso de uso). Separar API y worker es necesario (duración, concurrencia y permisos IAM opuestos); separar más la API no aporta valor. |
+| ¿Qué LLM usa la PoC? | El LLM es **intercambiable** por configuración (`LLM_PROVIDER`). La PoC usa **Groq** (`openai/gpt-oss-120b`) porque Claude en Amazon Bedrock requiere que Anthropic autorice la cuenta AWS (cuentas empresariales). `BedrockProvider` está implementado y testeado, y es el proveedor objetivo de producción. |
 | ¿Interfaz frontend? | **Fuera de alcance**: no es entregable ni criterio de evaluación. Se expone **Swagger** (`/docs`) para probar la API y la CLI muestra el razonamiento del agente. |
 
 ---
@@ -36,70 +38,92 @@ Hoy la prospección es manual: un vendedor busca "clínicas dentales en Lima", e
 
 ### 3.1 Principio: núcleo independiente del framework
 
-El **núcleo** (dominio, puertos/interfaces, agente, tools y caso de uso) son **clases TypeScript puras**: no importan `@nestjs/*` ni SDKs de infraestructura. **NestJS vive solo en la capa exterior**: controllers, módulos y conexión de dependencias (composition root). Los adaptadores (Groq, Tavily, DynamoDB) también son clases puras que implementan los puertos; Nest únicamente los instancia e inyecta.
+El **núcleo** (dominio, puertos/interfaces, agente, tools y casos de uso) son **clases TypeScript puras**: no importan `@nestjs/*` ni SDKs de terceros. **NestJS vive solo en la capa exterior**: controllers, módulos y conexión de dependencias (composition root). Los adaptadores (Groq, Bedrock, Tavily, DynamoDB) también son clases puras que implementan los puertos; Nest únicamente los instancia e inyecta.
 
-Beneficios: el agente se testea sin levantar Nest, el framework es reemplazable y el mismo núcleo se reutiliza en HTTP, CLI y Lambda.
+Beneficios: el agente se testea sin levantar Nest, el framework y el LLM son reemplazables y el mismo núcleo se reutiliza en HTTP, CLI y Lambda.
 
 ```
-┌──────────────────────── Capa exterior (NestJS) ────────────────────────┐
-│  HTTP Controller · CLI · Lambda handler · Módulos · Providers/tokens   │
-└───────────────────────────────┬────────────────────────────────────────┘
+┌──────────────────────── Capa exterior (NestJS) ─────────────────────────┐
+│  LeadsController · CLI · Lambda handler · Config (Zod) · Composition    │
+│  root: tokens + factories + registro de proveedores LLM (LLM_ADAPTERS)   │
+└───────────────────────────────┬─────────────────────────────────────────┘
                                 │ inyecta implementaciones
-┌───────────────────────────────▼──── Núcleo (TS puro) ──────────────────┐
-│  SearchLeadsUseCase ─► LeadAgent (bucle ReAct + tool calling)          │
-│                          ├─ search_web ─► SearchProvider (puerto)      │
-│                          ├─ fetch_page ─► PageFetcher (puerto)         │
-│                          └─ save_lead  ─► Zod ► LeadRepository (puerto)│
-│                        LLMProvider (puerto)                            │
-└───────────────────────────────▲────────────────────────────────────────┘
+┌───────────────────────────────▼──── Núcleo (TS puro) ───────────────────┐
+│  SearchLeadsUseCase ─► LeadAgent (bucle ReAct + tool calling)           │
+│  ListLeadsUseCase       ├─ search_web   ─► SearchProvider (puerto)      │
+│                         ├─ fetch_page   ─► PageFetcher (puerto)         │
+│                         ├─ save_lead    ─► Zod ► LeadRepository (puerto)│
+│                         ├─ discard_lead ─► motivo en el resumen         │
+│                         └─ CandidateLedger: decidir antes de buscar más │
+│                       LLMProvider · Logger · Clock (puertos)            │
+└───────────────────────────────▲─────────────────────────────────────────┘
                                 │ implementan los puertos
-┌───────────────────────────────┴──── Adaptadores (TS puro) ─────────────┐
-│  GroqProvider · BedrockProvider (stub) · TavilyProvider · MockSearch   │
-│  DynamoLeadRepository (DynamoDB Local en Docker)                       │
-└────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────┴──── Adaptadores (TS puro) ──────────────┐
+│  GroqProvider · BedrockProvider · TavilyProvider · MockSearchProvider   │
+│  HttpPageFetcher · MockPageFetcher · DynamoLeadRepository · ConsoleLogger│
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 Producción en AWS
+**PoC implementada** (lo que existe y corre en local):
 
-<!-- TODO(bloque 7): insertar ![Arquitectura AWS](docs/architecture.png) -->
+![PoC implementada](docs/architecture-poc.png)
+
+**Flujo del agente:** diagrama de actividades del bucle ReAct en [`docs/agent-activity.html`](docs/agent-activity.html) (interactivo y animado; abrir en el navegador).
+
+### 3.2 Producción en AWS (propuesta)
+
+![Arquitectura de producción en AWS](docs/architecture.png)
+
+Versión interactiva y animada, con los dos modos (PoC / producción) y el flujo paso a paso: [`docs/architecture.html`](docs/architecture.html) (abrir en el navegador). Fuentes Mermaid: [`docs/diagrams/`](docs/diagrams/).
 
 ```
-Cliente ─► API Gateway ─► Lambda "submit" ─► SQS ─► Lambda "agent-worker" ─► Amazon Bedrock (Claude)
-              │               (202 + jobId)    │            │                └► Tavily (key en Secrets Manager)
-              │                                DLQ          └► DynamoDB (leads + jobs)
-              └─► Lambda "get-job" (GET /jobs/{id}) ─► DynamoDB
-Observabilidad: CloudWatch Logs/Metrics + X-Ray · Seguridad: IAM roles, Secrets Manager
-Runtime: nodejs24.x (migración a nodejs26.x cuando salga de preview en Lambda)
+Cliente ─► API Gateway (REST, API key + usage plan) ─► λ api (NestJS)
+                                                        ├─ POST /leads/search: valida, crea job, encola ─► 202 + jobId
+                                                        └─ GET /jobs/{id} · GET /leads ─► DynamoDB
+SQS jobs (lote 1, DLQ tras 3 fallos) ─► λ agent-worker (LeadAgent, concurrencia reservada)
+                                         ├─► Amazon Bedrock (Claude, vía IAM)
+                                         ├─► Tavily + sitios web (HTTPS saliente; key en Secrets Manager)
+                                         └─► DynamoDB (leads con escritura condicional + estado del job)
+Observabilidad: CloudWatch Logs + X-Ray · Seguridad: roles IAM por Lambda, Secrets Manager
+Runtime: nodejs24.x (migración a nodejs26.x cuando esté disponible en Lambda)
 ```
 
-**Por qué asíncrono:** un agente puede tardar minutos; API Gateway corta a los 29 s. Se responde `202` con `jobId` y se consulta el estado.
+- **Por qué asíncrono:** una ejecución del agente tarda minutos y API Gateway corta a los 29 s. La API responde `202` con `jobId` y el cliente consulta el estado.
+- **Por qué dos Lambdas:** la API es corta, escala con el tráfico y solo necesita DynamoDB y SQS; el worker dura minutos, necesita Bedrock, Secrets Manager y salida a internet, y su **concurrencia reservada** es el freno que protege los rate limits del LLM y de Tavily.
+- **Dentro de AWS:** API Gateway, Lambda, SQS + DLQ, DynamoDB, Bedrock, Secrets Manager, CloudWatch y X-Ray. **Fuera de AWS:** Tavily y los sitios web públicos de las empresas (Groq solo como alternativa de LLM).
+- **Qué falta para llegar ahí desde la PoC:** el handler `agent-worker` (llama al mismo `SearchLeadsUseCase`), el registro de jobs, el endpoint `GET /jobs/{id}` y la infraestructura como código. El `lambda.ts` de la API ya está implementado y probado con eventos de API Gateway.
 
 ### 3.3 Estructura del código
 
 ```
 src/
 ├── core/                         # TS puro — prohibido importar @nestjs/* o SDKs
-│   ├── domain/                   # Lead schema (Zod), tipos, errores de dominio
-│   ├── ports/                    # LLMProvider, SearchProvider, PageFetcher, LeadRepository, Logger
-│   ├── agent/                    # LeadAgent (bucle ReAct), prompts/, tools/
-│   └── application/              # SearchLeadsUseCase
+│   ├── domain/                   # Lead y criterios (Zod), resumen de ejecución, dominio/agregadores, errors/
+│   ├── ports/                    # LLMProvider, SearchProvider, PageFetcher, LeadRepository, Logger, Clock
+│   ├── agent/                    # LeadAgent (bucle ReAct), AgentRun, CandidateLedger, prompts/, tools/
+│   └── application/              # SearchLeadsUseCase, ListLeadsUseCase
 ├── infrastructure/               # TS puro — adaptadores que implementan los puertos
-│   ├── llm/                      # GroqProvider, BedrockProvider (stub)
-│   ├── search/                   # TavilyProvider, MockSearchProvider
-│   ├── fetch/                    # HttpPageFetcher
-│   └── persistence/              # DynamoLeadRepository
+│   ├── llm/                      # GroqProvider, BedrockProvider y sus mappers
+│   ├── search/                   # TavilyProvider, MockSearchProvider (dataset ficticio de Lima)
+│   ├── fetch/                    # HttpPageFetcher, MockPageFetcher, html-to-text
+│   ├── persistence/              # DynamoLeadRepository, InMemoryLeadRepository, definición de la tabla
+│   ├── logging/ · system/        # ConsoleLogger, SystemClock, UuidGenerator
+│   └── shared/
 └── app/                          # NestJS — capa exterior
-    ├── config/                   # ConfigModule + validación de env con Zod
-    ├── leads/                    # LeadsModule, LeadsController, DTOs, Swagger
-    ├── providers/                # tokens de inyección y factories (composition root)
-    ├── main.ts                   # bootstrap HTTP
-    ├── cli.ts                    # createApplicationContext
-    └── lambda.ts                 # handler (@codegenie/serverless-express)
-tests/
-docs/
+    ├── config/                   # ConfigModule + validación del entorno con Zod
+    ├── common/                   # pipe de validación Zod, filtro de errores de dominio → HTTP
+    ├── leads/                    # LeadsModule, LeadsController, DTOs de Swagger
+    ├── providers/                # tokens, factories (composition root), registro LLM_ADAPTERS
+    ├── http-app.factory.ts       # app HTTP compartida por main.ts y lambda.ts
+    ├── main.ts                   # servidor HTTP local
+    ├── cli.ts                    # CLI (createApplicationContext)
+    └── lambda.ts                 # handler AWS Lambda (@codegenie/serverless-express)
+scripts/                          # db-init.ts (crea la tabla), smoke-agent.ts (agente sin Nest)
+tests/                            # core/, infrastructure/, app/ (incluye e2e), integration/, support/
+docs/                             # diagramas (HTML, PNG, Mermaid)
 ```
 
-La regla de dependencias se hace cumplir con ESLint (`no-restricted-imports` en `src/core` e `src/infrastructure` para `@nestjs/*`).
+La regla de dependencias entre capas se hace cumplir dos veces, con una sola fuente (`architecture-rules.mjs`): ESLint `no-restricted-imports` en `src/core` y `src/infrastructure`, y un test de arquitectura que revisa los imports reales.
 
 ---
 
@@ -107,16 +131,17 @@ La regla de dependencias se hace cumplir con ESLint (`no-restricted-imports` en 
 
 | Componente | Elección | Motivo |
 |---|---|---|
-| Runtime | Node.js 26 LTS (`engines: >=24`) | LTS activo hasta 2029. En Lambda se apunta a `nodejs24.x` (GA) hasta que `nodejs26.x` salga de preview. |
-| Lenguaje | TypeScript estricto | Tipado end-to-end. |
-| Framework | NestJS (solo capa exterior) | Módulos y DI expresan la separación de capas; el núcleo queda agnóstico. Trade-off: cold start en Lambda, mitigado con `@codegenie/serverless-express` y bundle optimizado. |
-| Agente | Bucle ReAct propio sobre tool calling del SDK | ~100 líneas, control total y transparente del razonamiento; evita la caja negra de un framework. Alternativa: LangGraph.js. |
-| LLM (local) | Groq (modelo open source con tool calling) | Costo cero para la PoC, baja latencia. |
-| LLM (producción) | Claude vía Amazon Bedrock | IAM en lugar de API keys, datos dentro de AWS, facturación y monitoreo centralizados (clave en fintech). |
-| Búsqueda | Tavily + `MockSearchProvider` | Devuelve contenido limpio para LLMs; el mock permite tests/demos sin key. |
-| Validación | Zod | Un solo esquema para validar output del LLM, env y requests. |
-| Base de datos | DynamoDB Local (Docker) | Coherente con el diseño serverless; PK por dominio para deduplicar. Detrás de `LeadRepository`. |
+| Runtime | Node.js 26 (`engines: >=24.10`) | LTS activo. `>=24.10` porque se usa `process.loadEnvFile` nativo (sin `dotenv`). En Lambda se apunta a `nodejs24.x`. |
+| Lenguaje | TypeScript estricto, ESM | Tipado end-to-end. ESM porque NestJS 12 se distribuye solo como ESM. |
+| Framework | NestJS 12 (solo capa exterior) | Módulos y DI expresan la separación de capas; el núcleo queda agnóstico. Trade-off: cold start en Lambda (ver limitaciones). |
+| Agente | Bucle ReAct propio sobre tool calling (`LeadAgent`) | Control total y transparente del razonamiento; guardas deterministas en código; sin la caja negra de un framework. Alternativa: LangGraph.js. |
+| LLM (PoC) | Groq · `openai/gpt-oss-120b` | Gratis y rápido. Elegido tras probar: `llama-3.3-70b-versatile` ya no está disponible y `qwen3.8-27b` ignoraba los resultados de los tools. |
+| LLM (producción) | Claude vía Amazon Bedrock (`BedrockProvider`) | IAM en lugar de API keys, datos dentro de AWS, facturación y monitoreo centralizados (clave en fintech). Modelo configurable (`BEDROCK_MODEL`, por defecto `anthropic.claude-haiku-5-5`). |
+| Búsqueda | Tavily + `MockSearchProvider` | Tavily devuelve contenido limpio para LLMs; el mock permite demos y tests sin key ni red. |
+| Validación | Zod | Un solo esquema para el output del LLM (y el JSON Schema de los tools), el entorno y los requests. |
+| Base de datos | DynamoDB (Local en Docker) | Coherente con el diseño serverless; PK = dominio con escritura condicional para deduplicar de forma atómica. Detrás de `LeadRepository`. |
 | Documentación API | `@nestjs/swagger` | Interfaz interactiva para el evaluador sin construir un frontend. |
+| Tests | Vitest (+ SWC para el e2e de Nest) | Núcleo testeado sin Nest con fakes de los puertos; e2e del controller con `@nestjs/testing`. |
 
 ---
 
@@ -145,47 +170,62 @@ La regla de dependencias se hace cumplir con ESLint (`no-restricted-imports` en 
 }
 ```
 
+El LLM solo aporta los datos extraídos de la fuente. `id` (dominio normalizado), `requestedSector`, `location`, `jobId` y `createdAt` los asigna el código.
+
 ---
 
 ## 6. Instalación y ejecución
 
-<!-- TODO(bloque 8): verificar todos los comandos desde un clon limpio y ajustar. -->
+<!-- TODO(bloque 8): verificar todos los comandos desde un clon limpio. -->
 
 ```bash
-# Requisitos: Node 26 (o >=24), Docker
-git clone <repo> && cd lead-agent
-cp .env.example .env          # completar GROQ_API_KEY, TAVILY_API_KEY
-docker compose up -d          # DynamoDB Local
+# Requisitos: Node >=24.10 (recomendado 26), Docker
+git clone <url-del-repositorio> && cd <directorio>
+cp .env.example .env          # completar GROQ_API_KEY (y TAVILY_API_KEY para búsqueda real)
 npm install
-npm run db:init               # crea la tabla
+docker compose up -d          # DynamoDB Local en :8000
+npm run db:init               # crea la tabla (idempotente)
 
-# CLI
-npm run agent -- --sector "Clínicas dentales" --location "Lima, Perú"
+# CLI (compila y ejecuta; por defecto SEARCH_PROVIDER=mock: sin key de búsqueda ni red)
+npm run agent -- --sector "Agencias de marketing" --location "Lima, Perú"
 
-# Modo mock (sin key de búsqueda)
-SEARCH_PROVIDER=mock npm run agent -- --sector "Agencias de marketing" --location "Lima, Perú"
+# Búsqueda real con Tavily
+SEARCH_PROVIDER=tavily npm run agent -- --sector "Clínicas dentales" --location "Lima, Perú"
 
 # API + Swagger en http://localhost:3000/docs
 npm run start:dev
 curl -X POST http://localhost:3000/leads/search \
   -H "Content-Type: application/json" \
   -d '{"sector":"Clínicas dentales","location":"Lima, Perú"}'
+curl http://localhost:3000/leads
 
-# Tests
-npm test
+# Calidad
+npm test                      # tests unitarios + e2e
+npm run test:integration      # contra DynamoDB Local (requiere Docker)
+npm run test:coverage
+npm run lint && npm run build
 ```
+
+Las variables pasadas en la línea de comandos tienen prioridad sobre el `.env`. El modo mock solo requiere la key del LLM.
 
 ### Variables de entorno
 
-| Variable | Descripción |
-|---|---|
-| `PORT` | Puerto HTTP (default 3000) |
-| `LLM_PROVIDER` | `groq` \| `bedrock` |
-| `GROQ_API_KEY` / `GROQ_MODEL` | Credenciales y modelo de Groq |
-| `SEARCH_PROVIDER` | `tavily` \| `mock` |
-| `TAVILY_API_KEY` | Key de Tavily |
-| `DYNAMO_ENDPOINT` / `DYNAMO_TABLE` | DynamoDB Local y nombre de tabla |
-| `AGENT_MAX_ITERATIONS` / `AGENT_MAX_LEADS` | Límites del agente |
+| Variable | Descripción | Default |
+|---|---|---|
+| `PORT` | Puerto HTTP | `3000` |
+| `LOG_LEVEL` | `debug` \| `info` \| `warn` \| `error` | `info` |
+| `LLM_PROVIDER` | `groq` \| `bedrock` | `groq` |
+| `LLM_TIMEOUT_MS` / `LLM_MAX_RETRIES` | Timeout y reintentos por llamada al LLM | `60000` / `2` |
+| `GROQ_API_KEY` / `GROQ_MODEL` | Key y modelo de Groq (key obligatoria con `groq`) | — / `openai/gpt-oss-120b` |
+| `AWS_REGION` | Región de Bedrock y DynamoDB | `us-east-2` |
+| `BEDROCK_MODEL` / `BEDROCK_EFFORT` / `BEDROCK_MAX_TOKENS` | Modelo de Claude en Bedrock, esfuerzo y tokens máximos | `anthropic.claude-haiku-5-5` / `medium` / `16000` |
+| `SEARCH_PROVIDER` | `tavily` \| `mock` | `mock` |
+| `TAVILY_API_KEY` | Key de Tavily (obligatoria con `tavily`) | — |
+| `HTTP_TIMEOUT_MS` | Timeout de Tavily y de la lectura de páginas | `10000` |
+| `DYNAMO_ENDPOINT` / `DYNAMO_TABLE` | Endpoint de DynamoDB Local (vacío en AWS) y tabla | `http://localhost:8000` / `leads` |
+| `AGENT_MAX_ITERATIONS` / `AGENT_MAX_LEADS` | Límites del agente por ejecución | `20` / `10` |
+
+Bedrock usa la cadena estándar de credenciales de AWS (perfil, `aws login`, rol IAM); no hace falta definir claves en el `.env`.
 
 ---
 
@@ -194,16 +234,28 @@ npm test
 - Rol y objetivo explícitos; el LLM planifica queries a partir de sector + ubicación.
 - Reglas anti-alucinación: solo datos presentes en la fuente, `null` si no existe, `sourceUrl` obligatorio, nunca inventar emails/teléfonos.
 - Criterios de cualificación explícitos (encaje sector/ubicación, legitimidad, contactabilidad, señales de tamaño).
-- Salida forzada vía schema del tool `save_lead` (JSON) + validación Zod con reintento.
-- Temperatura 0, máximo de iteraciones y de leads por ejecución.
+- Salida estructurada vía el schema del tool `save_lead` (JSON Schema generado desde Zod, con descripciones por campo) + validación Zod: el error vuelve al LLM para que se corrija.
+- Defensa en profundidad en código: el sitio web no puede ser una red social o un directorio conocido, y los campos de contexto los asigna el código, no el LLM.
+- Guardas de flujo deterministas (`CandidateLedger`): no se busca de nuevo con resultados sin decidir ni se lee otra empresa con una leída sin decidir; aviso explícito cuando una búsqueda no trae novedades.
+- Máximo de iteraciones y de leads por ejecución. Temperatura 0 donde el modelo lo admite (Groq); los modelos actuales de Claude no aceptan `temperature` y se controlan con `effort`.
 
 ---
 
 ## 8. Limitaciones y mejoras futuras
 
-<!-- TODO(bloque 8): añadir limitaciones reales encontradas durante la implementación. -->
+**Limitaciones actuales de la PoC**
 
-- Rate limits y reintentos con backoff hacia LLM y búsqueda; colas con concurrencia controlada.
+- **Flujo asíncrono no implementado:** el endpoint es síncrono y puede tardar minutos; falta el worker SQS, el registro de jobs y `GET /jobs/{id}` (ver 3.2).
+- **LLM en free tier:** Groq limita a 8.000 tokens/minuto y 200.000 tokens/día; por eso se compactan las observaciones antiguas del historial y las ejecuciones reales por día son pocas. Claude en Bedrock requiere una cuenta AWS autorizada por Anthropic.
+- **Modelo open source:** `gpt-oss-120b` emite un tool call por turno y tiende a postergar decisiones; las guardas de flujo lo compensan, pero un modelo con tool calling paralelo (Claude) necesitaría menos iteraciones.
+- **Dataset mock:** cubre dos sectores (agencias de marketing y clínicas dentales en Lima); otros sectores devuelven cero resultados en modo mock.
+- **Lectura de páginas simple:** conversión HTML → texto sin render de JavaScript.
+- **Listado con `Scan`:** `GET /leads` recorre la tabla; en producción, índices por `jobId` o fecha.
+- **Sin autenticación en la API local:** en producción, API key + usage plan en API Gateway.
+
+**Mejoras futuras**
+
+- Rate limits y reintentos con backoff hacia LLM y búsqueda; concurrencia controlada por cola.
 - Scraping profundo: proxies, rotación, respeto de `robots.txt`, render de JS.
 - Enriquecimiento con fuentes adicionales (Google Places, LinkedIn, SUNAT/RUC).
 - Cumplimiento de Ley 29733 (datos personales), base legal y retención de datos.
@@ -212,4 +264,4 @@ npm test
 - Observabilidad del LLM (trazas de tokens, costo y latencia por job).
 - Optimización de cold start de NestJS en Lambda (bundle con esbuild, provisioned concurrency si aplica).
 - Frontend para el equipo comercial (listado, filtros por score, exportación).
-- IaC (AWS CDK / SAM), CI/CD y entornos.
+- IaC (AWS SAM / CDK), CI/CD y entornos.

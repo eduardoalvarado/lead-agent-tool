@@ -1,0 +1,23 @@
+%% Lead Agent — diagrama de actividades del bucle ReAct (ver docs/agent-activity.html)
+flowchart TD
+  input(["Sector + ubicación<br/><small>HTTP · CLI · SQS</small>"])
+  validate["Validar criterios (Zod) y crear jobId"]
+  think{"LLM razona<br/><small>¿pide tools?</small>"}
+  act["Ejecutar tool<br/><small>args JSON validados</small>"]
+  tools["search_web · fetch_page · save_lead · discard_lead<br/><small>Zod + CandidateLedger</small>"]
+  observe["Observación al historial<br/><small>resultado o error del tool</small>"]
+  guard{"¿Límite de iteraciones<br/>o de leads?"}
+  summary(["Resumen final<br/><small>guardados · descartados · motivo</small>"])
+  llmerror(["llm_error<br/><small>resumen parcial, lo guardado se conserva</small>"])
+  tavily[("Tavily / mock")]
+  dynamo[("DynamoDB")]
+
+  input --> validate --> think
+  think -- tool_calls --> act --> tools
+  tools -- search_web --> tavily
+  tools -- save_lead --> dynamo
+  tools --> observe --> guard
+  guard -- no: continuar --> think
+  guard -- sí --> summary
+  think -- sin tool calls --> summary
+  think -. "429 / timeout del proveedor" .-> llmerror

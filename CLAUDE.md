@@ -29,7 +29,7 @@ Contexto para Claude Code. Léelo completo antes de escribir código.
 
 ## Stack (no cambiar sin consultar)
 
-- **Node.js 26 LTS** (`"engines": { "node": ">=24" }`), TypeScript estricto (`strict: true`).
+- **Node.js 26 LTS** (`"engines": { "node": ">=24.10" }`, por `process.loadEnvFile`), TypeScript estricto (`strict: true`).
 - **NestJS solo en la capa exterior** (ver regla de arquitectura). `@nestjs/swagger` para documentar la API. `@codegenie/serverless-express` para el handler Lambda (target `nodejs24.x`).
 - LLM: **agnóstico al proveedor** vía el puerto `LLMProvider`; conectar otro LLM = un adaptador nuevo + su registro en la configuración (`LLM_PROVIDER`), sin tocar el núcleo. Adaptadores: `GroqProvider` (por defecto en la PoC) y `BedrockProvider` (Claude vía Amazon Bedrock, endpoint `bedrock-mantle`; adaptador de producción, requiere que la cuenta AWS tenga acceso a modelos de Anthropic). Modelo configurable por env.
 - Búsqueda: puerto `SearchProvider`; adaptadores `TavilyProvider` y `MockSearchProvider` (datos realistas de Lima, Perú).

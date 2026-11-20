@@ -1,0 +1,1560 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lead Agent · Arquitectura</title>
+    <meta
+      name="description"
+      content="Arquitectura del Lead Agent: PoC implementada y propuesta de producción en AWS, con el flujo animado paso a paso."
+    />
+    <style>
+      :root {
+        --bg: #f5f7fa;
+        --panel: #ffffff;
+        --ink: #172033;
+        --muted: #5b6577;
+        --line: #d9dee7;
+        --edge: #7b8494;
+        --edge-hi: #172033;
+        --zone-aws: #fff8ef;
+        --zone-aws-line: #f0a33a;
+        --zone-ext: #f2f4f8;
+        --zone-ext-line: #9aa4b5;
+        --zone-sub: #ffffff;
+        --chip: #eef1f6;
+        --accent: #0f6fde;
+        --error: #d13447;
+        --dim: 0.16;
+        --halo: #ffffff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #0f141c;
+          --panel: #161d28;
+          --ink: #e6ebf2;
+          --muted: #9aa5b6;
+          --line: #2a3443;
+          --edge: #8a94a6;
+          --edge-hi: #f2f5f9;
+          --zone-aws: #241d12;
+          --zone-aws-line: #c98425;
+          --zone-ext: #1b222e;
+          --zone-ext-line: #5d6879;
+          --zone-sub: #1a212c;
+          --chip: #222b38;
+          --accent: #5aa7ff;
+          --error: #ff6b7d;
+          --dim: 0.2;
+          --halo: #161d28;
+        }
+      }
+      :root[data-theme='dark'] {
+        --bg: #0f141c;
+        --panel: #161d28;
+        --ink: #e6ebf2;
+        --muted: #9aa5b6;
+        --line: #2a3443;
+        --edge: #8a94a6;
+        --edge-hi: #f2f5f9;
+        --zone-aws: #241d12;
+        --zone-aws-line: #c98425;
+        --zone-ext: #1b222e;
+        --zone-ext-line: #5d6879;
+        --zone-sub: #1a212c;
+        --chip: #222b38;
+        --accent: #5aa7ff;
+        --error: #ff6b7d;
+        --dim: 0.2;
+        --halo: #161d28;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          14px/1.45 ui-sans-serif,
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          'Helvetica Neue',
+          Arial,
+          sans-serif;
+      }
+      .page {
+        max-width: 1480px;
+        margin: 0 auto;
+        padding: 20px 16px 28px;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 24px;
+        align-items: flex-end;
+        justify-content: space-between;
+        margin-bottom: 14px;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0;
+        letter-spacing: -0.01em;
+      }
+      .subtitle {
+        color: var(--muted);
+        margin: 2px 0 0;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      .seg {
+        display: inline-flex;
+        background: var(--chip);
+        border-radius: 10px;
+        padding: 3px;
+      }
+      .seg button,
+      .btn {
+        border: 0;
+        background: transparent;
+        color: var(--ink);
+        font: inherit;
+        font-weight: 600;
+        padding: 7px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      .seg button[aria-pressed='true'] {
+        background: var(--panel);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+        color: var(--accent);
+      }
+      .btn {
+        background: var(--chip);
+      }
+      .btn:hover {
+        filter: brightness(0.97);
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+      }
+      .stage {
+        padding: 8px;
+      }
+      svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .steps {
+        display: grid;
+        grid-template-columns: 300px 1fr;
+        gap: 14px;
+        margin-top: 14px;
+      }
+      .step-list {
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .step-list button {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        text-align: left;
+        width: 100%;
+        border: 0;
+        background: transparent;
+        color: var(--ink);
+        font: inherit;
+        padding: 7px 8px;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      .step-list button:hover {
+        background: var(--chip);
+      }
+      .step-list button[aria-current='step'] {
+        background: var(--chip);
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .num {
+        flex: none;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: var(--ink);
+        color: var(--panel);
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .step-list button[aria-current='step'] .num {
+        background: var(--accent);
+      }
+      .detail {
+        padding: 16px 18px;
+      }
+      .detail h2 {
+        margin: 0 0 6px;
+        font-size: 17px;
+      }
+      .detail p {
+        margin: 0 0 10px;
+        color: var(--muted);
+      }
+      .detail ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+      .detail li {
+        margin: 3px 0;
+      }
+      .nav {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .notes {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+        margin-top: 14px;
+      }
+      .notes .card {
+        padding: 14px 16px;
+      }
+      .notes h3 {
+        margin: 0 0 6px;
+        font-size: 14px;
+      }
+      .notes ul {
+        margin: 0;
+        padding-left: 18px;
+        color: var(--muted);
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 16px;
+        padding: 10px 14px 4px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .sw {
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+        display: inline-block;
+      }
+      .ln {
+        width: 26px;
+        height: 0;
+        border-top: 2px solid var(--edge);
+        display: inline-block;
+      }
+      .ln.dash {
+        border-top-style: dashed;
+      }
+      .ln.err {
+        border-top-color: var(--error);
+        border-top-style: dashed;
+      }
+      .box-dash {
+        width: 16px;
+        height: 11px;
+        border: 1.5px dashed var(--muted);
+        border-radius: 3px;
+        display: inline-block;
+      }
+      /* SVG */
+      .zone-label {
+        font-size: 13px;
+        font-weight: 700;
+        fill: var(--muted);
+        letter-spacing: 0.02em;
+      }
+      .sub-label {
+        font-size: 11px;
+        font-weight: 600;
+        fill: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      .node rect.body {
+        fill: var(--panel);
+        stroke: var(--line);
+        stroke-width: 1.4;
+      }
+      .node.planned rect.body {
+        stroke-dasharray: 5 4;
+        stroke: var(--muted);
+      }
+      .node .title {
+        font-size: 13px;
+        font-weight: 700;
+        fill: var(--ink);
+      }
+      .node .sub {
+        font-size: 10.5px;
+        fill: var(--muted);
+      }
+      .node .tag {
+        font-size: 9.5px;
+        font-weight: 700;
+        fill: var(--muted);
+      }
+      .edge path {
+        fill: none;
+        stroke: var(--edge);
+        stroke-width: 1.8;
+      }
+      .edge.dash path {
+        stroke-dasharray: 6 5;
+      }
+      .edge.err path {
+        stroke: var(--error);
+        stroke-dasharray: 6 5;
+      }
+      .edge .elabel {
+        font-size: 10.5px;
+        fill: var(--muted);
+        paint-order: stroke;
+        stroke: var(--halo);
+        stroke-width: 4px;
+        stroke-linejoin: round;
+      }
+      .badge circle {
+        fill: var(--ink);
+      }
+      .badge text {
+        fill: var(--panel);
+        font-size: 10.5px;
+        font-weight: 700;
+      }
+      .node,
+      .edge,
+      .badge {
+        transition: opacity 0.35s ease;
+      }
+      .focus .node:not(.on),
+      .focus .edge:not(.on),
+      .focus .badge:not(.on) {
+        opacity: var(--dim);
+      }
+      .edge.on path {
+        stroke: var(--edge-hi);
+        stroke-width: 2.4;
+      }
+      .edge.on.err path {
+        stroke: var(--error);
+      }
+      .particle {
+        fill: var(--accent);
+      }
+      .particle.err {
+        fill: var(--error);
+      }
+      @media (max-width: 900px) {
+        .steps,
+        .notes {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .node,
+        .edge,
+        .badge {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header>
+        <div>
+          <h1>Lead Agent · Arquitectura</h1>
+          <p class="subtitle" id="subtitle"></p>
+        </div>
+        <div class="controls">
+          <div class="seg" role="group" aria-label="Modo">
+            <button type="button" data-mode="prod">Producción propuesta (AWS)</button>
+            <button type="button" data-mode="poc">PoC implementada</button>
+          </div>
+          <button type="button" class="btn" id="play">▶ Reproducir</button>
+          <button type="button" class="btn" id="theme" aria-label="Cambiar tema">◐ Tema</button>
+        </div>
+      </header>
+
+      <div class="card stage">
+        <svg id="diagram" viewBox="0 46 1600 554" role="img" aria-labelledby="diagram-title">
+          <title id="diagram-title">Diagrama de arquitectura del Lead Agent</title>
+          <defs>
+            <marker
+              id="arrow"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path d="M0,0 L10,5 L0,10 z" fill="context-stroke" />
+            </marker>
+          </defs>
+          <g id="layer-zones"></g>
+          <g id="layer-edges"></g>
+          <g id="layer-nodes"></g>
+          <g id="layer-badges"></g>
+          <g id="layer-particles"></g>
+        </svg>
+        <div class="legend" id="legend"></div>
+      </div>
+
+      <div class="steps">
+        <div class="card step-list" id="step-list" aria-label="Pasos del flujo"></div>
+        <div class="card detail" aria-live="polite">
+          <h2 id="detail-title"></h2>
+          <p id="detail-text"></p>
+          <ul id="detail-points"></ul>
+          <div class="nav">
+            <button type="button" class="btn" id="prev">← Anterior</button>
+            <button type="button" class="btn" id="next">Siguiente →</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="notes" id="notes"></div>
+    </div>
+
+    <script>
+      (() => {
+        // Colores por categoría (inspirados en las categorías de servicios de AWS; íconos propios).
+        const CAT = {
+          compute: { color: '#ED7100', label: 'Cómputo' },
+          integ: { color: '#E7157B', label: 'Integración (API, colas)' },
+          db: { color: '#3B48CC', label: 'Base de datos' },
+          ai: { color: '#01A88D', label: 'IA / LLM' },
+          sec: { color: '#DD344C', label: 'Seguridad' },
+          obs: { color: '#8C4FFF', label: 'Observabilidad' },
+          ext: { color: '#5A6B86', label: 'Externo' },
+        };
+
+        const W = 160,
+          H = 64;
+        const col = { A: 290, B: 510, C: 730, D: 950, E: 1170, X: 1395, L: 40 };
+        const row = { 1: 150, 2: 300, 3: 450 };
+
+        const MODES = {
+          prod: {
+            subtitle:
+              'Propuesta de despliegue en AWS: asíncrona, serverless, con 2 Lambdas (api y agent-worker) y el LLM dentro de AWS. Fuera de AWS solo quedan Tavily y los sitios web de las empresas.',
+            zones: [
+              { x: 20, y: 90, w: 200, h: 480, label: 'Usuarios', kind: 'ext' },
+              { x: 240, y: 56, w: 1110, h: 534, label: 'AWS Cloud', kind: 'aws' },
+              { x: 258, y: 80, w: 1074, h: 494, label: 'Región us-east-2', kind: 'region' },
+              { x: 272, y: 128, w: 416, h: 432, label: 'API', kind: 'sub' },
+              { x: 712, y: 128, w: 418, h: 432, label: 'Procesamiento y datos', kind: 'sub' },
+              { x: 1150, y: 128, w: 182, h: 432, label: 'Servicios gestionados', kind: 'sub' },
+              { x: 1370, y: 90, w: 210, h: 480, label: 'Internet · terceros', kind: 'ext' },
+            ],
+            nodes: [
+              {
+                id: 'client',
+                x: col.L,
+                y: row[1],
+                cat: 'ext',
+                icon: 'user',
+                title: 'Cliente / CRM',
+                sub: 'equipo comercial',
+              },
+              {
+                id: 'apigw',
+                x: col.A,
+                y: row[1],
+                cat: 'integ',
+                icon: 'api',
+                title: 'API Gateway',
+                sub: 'REST · API key',
+              },
+              {
+                id: 'api',
+                x: col.B,
+                y: row[1],
+                cat: 'compute',
+                icon: 'lambda',
+                title: 'λ api (NestJS)',
+                sub: 'POST · GET',
+                tag: 'lambda.ts existente',
+              },
+              {
+                id: 'sqs',
+                x: col.C,
+                y: row[1],
+                cat: 'integ',
+                icon: 'queue',
+                title: 'SQS jobs',
+                sub: 'lote de 1 mensaje',
+              },
+              {
+                id: 'worker',
+                x: col.D,
+                y: row[1],
+                cat: 'compute',
+                icon: 'lambda',
+                title: 'λ agent-worker',
+                sub: 'LeadAgent · ReAct',
+                tag: 'concurrencia reservada',
+              },
+              {
+                id: 'bedrock',
+                x: col.E,
+                y: row[1],
+                cat: 'ai',
+                icon: 'spark',
+                title: 'Amazon Bedrock',
+                sub: 'Claude · tool calling',
+              },
+              {
+                id: 'dlq',
+                x: col.C,
+                y: row[2],
+                cat: 'integ',
+                icon: 'queue',
+                title: 'SQS DLQ',
+                sub: 'fallidos · alarma',
+              },
+              {
+                id: 'secrets',
+                x: col.E,
+                y: row[2],
+                cat: 'sec',
+                icon: 'key',
+                title: 'Secrets Manager',
+                sub: 'TAVILY_API_KEY',
+              },
+              {
+                id: 'dynamo',
+                x: col.C,
+                y: row[3],
+                cat: 'db',
+                icon: 'db',
+                title: 'DynamoDB',
+                sub: 'leads + jobs',
+              },
+              {
+                id: 'cw',
+                x: col.E,
+                y: row[3],
+                cat: 'obs',
+                icon: 'pulse',
+                title: 'CloudWatch + X-Ray',
+                sub: 'logs · trazas',
+              },
+              {
+                id: 'tavily',
+                x: col.X,
+                y: row[1],
+                cat: 'ext',
+                icon: 'search',
+                title: 'Tavily API',
+                sub: 'búsqueda web',
+              },
+              {
+                id: 'web',
+                x: col.X,
+                y: row[2],
+                cat: 'ext',
+                icon: 'globe',
+                title: 'Sitios web',
+                sub: 'páginas de empresas',
+              },
+              {
+                id: 'groq',
+                x: col.X,
+                y: row[3],
+                cat: 'ai',
+                icon: 'spark',
+                title: 'Groq (opcional)',
+                sub: 'alternativa de LLM',
+                planned: true,
+              },
+            ],
+            edges: [
+              {
+                id: 'e1',
+                pts: [
+                  [200, 182],
+                  [290, 182],
+                ],
+                badge: [245, 182],
+                steps: [1, 7],
+              },
+              {
+                id: 'e2',
+                pts: [
+                  [450, 182],
+                  [510, 182],
+                ],
+                badge: [480, 182],
+                steps: [2, 7],
+              },
+              {
+                id: 'e3',
+                pts: [
+                  [670, 182],
+                  [730, 182],
+                ],
+                badge: [700, 182],
+                steps: [2],
+              },
+              {
+                id: 'e8',
+                pts: [
+                  [590, 214],
+                  [590, 410],
+                  [770, 410],
+                  [770, 450],
+                ],
+                badge: [680, 410],
+                label: 'job · leads',
+                lx: 680,
+                ly: 398,
+                steps: [2, 7],
+              },
+              {
+                id: 'e4',
+                pts: [
+                  [890, 182],
+                  [950, 182],
+                ],
+                badge: [920, 182],
+                steps: [3],
+              },
+              {
+                id: 'e5',
+                pts: [
+                  [1110, 172],
+                  [1170, 172],
+                ],
+                badge: [1140, 172],
+                steps: [4],
+              },
+              {
+                id: 'e6',
+                pts: [
+                  [1110, 200],
+                  [1140, 200],
+                  [1140, 332],
+                  [1170, 332],
+                ],
+                badge: [1140, 266],
+                steps: [4],
+                dash: true,
+              },
+              {
+                id: 'e7a',
+                pts: [
+                  [1030, 150],
+                  [1030, 108],
+                  [1360, 108],
+                  [1360, 182],
+                  [1395, 182],
+                ],
+                badge: [1200, 108],
+                label: 'HTTPS saliente',
+                lx: 1280,
+                ly: 100,
+                steps: [5],
+              },
+              {
+                id: 'e7b',
+                pts: [
+                  [1360, 182],
+                  [1360, 332],
+                  [1395, 332],
+                ],
+                steps: [5],
+              },
+              {
+                id: 'e10',
+                pts: [
+                  [1030, 214],
+                  [1030, 430],
+                  [850, 430],
+                  [850, 450],
+                ],
+                badge: [940, 430],
+                label: 'save_lead',
+                lx: 940,
+                ly: 418,
+                steps: [6],
+              },
+              {
+                id: 'e9',
+                pts: [
+                  [810, 214],
+                  [810, 300],
+                ],
+                badge: [810, 257],
+                steps: [8],
+                kind: 'err',
+              },
+              {
+                id: 'e11',
+                pts: [
+                  [1070, 214],
+                  [1070, 482],
+                  [1170, 482],
+                ],
+                badge: [1120, 482],
+                steps: [8],
+                dash: true,
+              },
+            ],
+            steps: [
+              {
+                title: 'Solicitud',
+                nodes: ['client', 'apigw'],
+                text: 'El CRM o el equipo comercial pide leads de un sector y una ubicación.',
+                points: [
+                  'POST /leads/search con API key; el usage plan aplica cuota y throttling por cliente.',
+                  'REST API (no HTTP API): las API keys y usage plans solo existen en REST.',
+                ],
+              },
+              {
+                title: 'Encolado inmediato',
+                nodes: ['apigw', 'api', 'sqs', 'dynamo'],
+                text: 'La λ api (la app NestJS de la PoC, servida por lambda.ts) valida la entrada con el schema Zod del núcleo, registra el job y lo encola.',
+                points: [
+                  'Responde 202 + jobId en menos de un segundo.',
+                  'El agente tarda minutos y API Gateway corta a los 29 s: por eso el flujo es asíncrono.',
+                  'Es la misma Lambda que ya existe; en producción POST /leads/search encola en lugar de ejecutar el agente.',
+                ],
+              },
+              {
+                title: 'Consumo controlado',
+                nodes: ['sqs', 'worker'],
+                text: 'SQS invoca al worker con lotes de 1 mensaje. El worker es la única pieza nueva: un handler que llama al mismo SearchLeadsUseCase.',
+                points: [
+                  'La concurrencia reservada de la Lambda es el techo real de llamadas simultáneas al LLM y a Tavily (sus rate limits).',
+                  'Visibilidad de la cola mayor que el timeout de la Lambda (15 min) para no duplicar trabajo.',
+                ],
+              },
+              {
+                title: 'Razonamiento (ReAct)',
+                nodes: ['worker', 'bedrock', 'secrets'],
+                text: 'El LeadAgent ejecuta el bucle ReAct: Claude decide en cada paso qué tool usar o cuándo terminar.',
+                points: [
+                  'Bedrock se invoca con el rol IAM de la Lambda: sin API keys del LLM y con los datos dentro de AWS.',
+                  'La key de Tavily se lee de Secrets Manager (nunca en el código ni en variables en claro).',
+                ],
+              },
+              {
+                title: 'Búsqueda en internet',
+                nodes: ['worker', 'tavily', 'web'],
+                text: 'search_web y fetch_page salen por HTTPS hacia internet.',
+                points: [
+                  'Son las únicas dependencias fuera de AWS.',
+                  'Lambda fuera de VPC: salida directa sin NAT. Si se exige VPC: NAT Gateway + VPC endpoints para DynamoDB y Bedrock.',
+                ],
+              },
+              {
+                title: 'Persistencia con dedupe',
+                nodes: ['worker', 'dynamo'],
+                text: 'save_lead valida con Zod y guarda con escritura condicional por dominio.',
+                points: [
+                  'attribute_not_exists(id): un dominio nunca se duplica, ni entre ejecuciones simultáneas.',
+                  'Al terminar, el job pasa a DONE con el resumen (guardados, descartados y motivo).',
+                ],
+              },
+              {
+                title: 'Consulta de resultados',
+                nodes: ['client', 'apigw', 'api', 'dynamo'],
+                text: 'El cliente consulta el estado del job y los leads a través de la misma λ api.',
+                points: [
+                  'GET /jobs/{id}: estado y resumen de la ejecución.',
+                  'GET /leads: leads priorizados por qualificationScore (ya implementado).',
+                ],
+              },
+              {
+                title: 'Resiliencia y observabilidad',
+                nodes: ['sqs', 'dlq', 'worker', 'cw'],
+                text: 'Los fallos no se pierden y cada paso del agente queda trazado.',
+                points: [
+                  'Tras 3 intentos fallidos el mensaje va a la DLQ, con alarma en CloudWatch.',
+                  'Logs del razonamiento (tool, argumentos, resultado) y trazas X-Ray por jobId.',
+                ],
+              },
+            ],
+            notes: [
+              {
+                title: 'Dentro de AWS',
+                items: [
+                  'API Gateway y 2 Lambdas: api (NestJS) y agent-worker',
+                  'SQS + DLQ, DynamoDB, Bedrock (Claude) vía IAM',
+                  'Secrets Manager, CloudWatch y X-Ray',
+                ],
+              },
+              {
+                title: 'Fuera de AWS',
+                items: [
+                  'Tavily: API de búsqueda (key en Secrets Manager)',
+                  'Sitios web públicos de las empresas (fetch_page)',
+                  'Groq: alternativa de LLM, intercambiable por configuración',
+                ],
+              },
+              {
+                title: 'Por qué 2 Lambdas',
+                items: [
+                  'api: corta, escala con el tráfico, solo DynamoDB y SQS',
+                  'agent-worker: minutos, Bedrock + Secrets + internet',
+                  'Su concurrencia reservada protege los rate limits; la cola absorbe picos',
+                ],
+              },
+            ],
+          },
+          poc: {
+            subtitle:
+              'Lo que existe hoy en el repositorio y se ejecuta en local. El mismo núcleo queda listo para la propuesta de producción.',
+            zones: [
+              { x: 20, y: 90, w: 200, h: 480, label: 'Evaluador', kind: 'ext' },
+              { x: 240, y: 56, w: 1110, h: 534, label: 'Máquina local', kind: 'aws' },
+              {
+                x: 258,
+                y: 80,
+                w: 662,
+                h: 494,
+                label: 'Proceso Node.js 26 · NestJS',
+                kind: 'region',
+              },
+              { x: 932, y: 420, w: 196, h: 112, label: 'Docker', kind: 'sub' },
+              { x: 1370, y: 90, w: 210, h: 480, label: 'Servicios externos', kind: 'ext' },
+            ],
+            nodes: [
+              {
+                id: 'swagger',
+                x: col.L,
+                y: row[1],
+                cat: 'ext',
+                icon: 'user',
+                title: 'Swagger / curl',
+                sub: 'localhost:3000/docs',
+              },
+              {
+                id: 'terminal',
+                x: col.L,
+                y: row[2],
+                cat: 'ext',
+                icon: 'term',
+                title: 'Terminal',
+                sub: 'línea de comandos',
+              },
+              {
+                id: 'controller',
+                x: col.A,
+                y: row[1],
+                cat: 'integ',
+                icon: 'api',
+                title: 'LeadsController',
+                sub: 'HTTP síncrono',
+              },
+              {
+                id: 'cli',
+                x: col.A,
+                y: row[2],
+                cat: 'compute',
+                icon: 'term',
+                title: 'cli.ts',
+                sub: 'npm run agent',
+              },
+              {
+                id: 'lambdah',
+                x: col.A,
+                y: row[3],
+                cat: 'compute',
+                icon: 'lambda',
+                title: 'lambda.ts',
+                sub: 'sin desplegar',
+                planned: true,
+              },
+              {
+                id: 'usecases',
+                x: col.B,
+                y: row[1],
+                cat: 'compute',
+                icon: 'lambda',
+                title: 'Casos de uso',
+                sub: 'Search · List',
+              },
+              {
+                id: 'agent',
+                x: col.C,
+                y: row[1],
+                cat: 'compute',
+                icon: 'loop',
+                title: 'LeadAgent',
+                sub: 'ReAct · 4 tools',
+                tag: 'mock en proceso',
+              },
+              {
+                id: 'dynamolocal',
+                x: col.D,
+                y: row[3],
+                cat: 'db',
+                icon: 'db',
+                title: 'DynamoDB Local',
+                sub: 'Docker · :8000',
+              },
+              {
+                id: 'tavily',
+                x: col.X,
+                y: 130,
+                cat: 'ext',
+                icon: 'search',
+                title: 'Tavily API',
+                sub: 'opcional · API key',
+              },
+              {
+                id: 'web',
+                x: col.X,
+                y: 240,
+                cat: 'ext',
+                icon: 'globe',
+                title: 'Sitios web',
+                sub: 'fetch_page',
+              },
+              {
+                id: 'groq',
+                x: col.X,
+                y: 350,
+                cat: 'ai',
+                icon: 'spark',
+                title: 'Groq',
+                sub: 'por defecto',
+              },
+              {
+                id: 'bedrock',
+                x: col.X,
+                y: 470,
+                cat: 'ai',
+                icon: 'spark',
+                title: 'Amazon Bedrock',
+                sub: 'listo · sin acceso',
+                planned: true,
+              },
+            ],
+            edges: [
+              {
+                id: 'p1',
+                pts: [
+                  [200, 182],
+                  [290, 182],
+                ],
+                badge: [245, 182],
+                steps: [1, 6],
+              },
+              {
+                id: 'p2',
+                pts: [
+                  [200, 332],
+                  [290, 332],
+                ],
+                badge: [245, 332],
+                steps: [1],
+              },
+              {
+                id: 'p3',
+                pts: [
+                  [450, 182],
+                  [510, 182],
+                ],
+                badge: [480, 182],
+                steps: [2, 6],
+              },
+              {
+                id: 'p4',
+                pts: [
+                  [450, 332],
+                  [590, 332],
+                  [590, 214],
+                ],
+                badge: [520, 332],
+                steps: [2],
+              },
+              {
+                id: 'p5',
+                pts: [
+                  [670, 182],
+                  [730, 182],
+                ],
+                badge: [700, 182],
+                steps: [2],
+              },
+              {
+                id: 'p6',
+                pts: [
+                  [890, 170],
+                  [1240, 170],
+                  [1240, 382],
+                  [1395, 382],
+                ],
+                badge: [1070, 170],
+                label: 'LLMProvider',
+                lx: 1160,
+                ly: 160,
+                steps: [3],
+              },
+              {
+                id: 'p7a',
+                pts: [
+                  [810, 150],
+                  [810, 108],
+                  [1340, 108],
+                  [1340, 162],
+                  [1395, 162],
+                ],
+                badge: [1070, 108],
+                label: 'si SEARCH_PROVIDER=tavily',
+                lx: 1200,
+                ly: 100,
+                steps: [4],
+                dash: true,
+              },
+              {
+                id: 'p7b',
+                pts: [
+                  [1340, 162],
+                  [1340, 272],
+                  [1395, 272],
+                ],
+                steps: [4],
+                dash: true,
+              },
+              {
+                id: 'p8',
+                pts: [
+                  [850, 214],
+                  [850, 482],
+                  [950, 482],
+                ],
+                badge: [850, 340],
+                label: 'save_lead',
+                lx: 900,
+                ly: 470,
+                steps: [5],
+              },
+              {
+                id: 'p9',
+                pts: [
+                  [640, 214],
+                  [640, 550],
+                  [1030, 550],
+                  [1030, 514],
+                ],
+                badge: [800, 550],
+                label: 'GET /leads',
+                lx: 900,
+                ly: 540,
+                steps: [6],
+              },
+            ],
+            steps: [
+              {
+                title: 'Entrada (HTTP o CLI)',
+                nodes: ['swagger', 'terminal', 'controller', 'cli'],
+                text: 'El evaluador prueba la API desde Swagger o ejecuta el agente desde la terminal.',
+                points: [
+                  'POST /leads/search es síncrono en la PoC: responde cuando el agente termina.',
+                  'La CLI levanta el mismo módulo Nest sin servidor HTTP.',
+                ],
+              },
+              {
+                title: 'Mismo caso de uso',
+                nodes: ['controller', 'cli', 'usecases', 'agent', 'lambdah'],
+                text: 'HTTP, CLI y el handler Lambda reutilizan SearchLeadsUseCase.',
+                points: [
+                  'El núcleo (agente, tools, dominio, puertos) es TypeScript puro: no conoce Nest ni los SDKs.',
+                  'lambda.ts está implementado y probado con eventos de API Gateway, pero no desplegado: es la futura λ api de producción.',
+                ],
+              },
+              {
+                title: 'LLM intercambiable',
+                nodes: ['agent', 'groq', 'bedrock'],
+                text: 'El agente habla con el puerto LLMProvider; el adaptador se elige con LLM_PROVIDER.',
+                points: [
+                  'Groq por defecto (la cuenta AWS no tiene acceso a Claude en Bedrock).',
+                  'BedrockProvider está implementado y testeado; en producción es el proveedor objetivo.',
+                ],
+              },
+              {
+                title: 'Búsqueda',
+                nodes: ['agent', 'tavily', 'web'],
+                text: 'SEARCH_PROVIDER=mock usa un dataset ficticio de Lima dentro del proceso; tavily sale a internet.',
+                points: [
+                  'El modo mock no requiere API key ni red: es la demo reproducible.',
+                  'Con tavily, fetch_page lee las páginas de las empresas por HTTPS.',
+                ],
+              },
+              {
+                title: 'Persistencia',
+                nodes: ['agent', 'dynamolocal'],
+                text: 'DynamoLeadRepository guarda en DynamoDB Local (Docker) con escritura condicional por dominio.',
+                points: ['Misma tabla y misma clave que en producción (npm run db:init).'],
+              },
+              {
+                title: 'Consulta',
+                nodes: ['swagger', 'controller', 'usecases', 'dynamolocal'],
+                text: 'GET /leads devuelve los leads priorizados por qualificationScore.',
+                points: [
+                  'ListLeadsUseCase lee del repositorio a través del puerto LeadRepository.',
+                ],
+              },
+            ],
+            notes: [
+              {
+                title: 'Implementado',
+                items: [
+                  'API Nest + Swagger, CLI y handler Lambda',
+                  'Agente ReAct con 4 tools y guardas',
+                  'DynamoDB Local con dedupe por dominio',
+                ],
+              },
+              {
+                title: 'Pendiente para producción',
+                items: [
+                  'Handler agent-worker (SQS), registro de jobs y GET /jobs/{id}',
+                  'Despliegue (SAM), IAM, Secrets Manager',
+                  'Acceso a Claude en Bedrock (cuenta empresarial)',
+                ],
+              },
+              {
+                title: 'Por qué es trasladable',
+                items: [
+                  'Núcleo independiente del framework y de la nube',
+                  'Adaptadores detrás de puertos: Groq ↔ Bedrock, mock ↔ Tavily',
+                  'Mismo modelo de datos y misma clave en DynamoDB',
+                ],
+              },
+            ],
+          },
+        };
+
+        const NS = 'http://www.w3.org/2000/svg';
+        const $ = (id) => document.getElementById(id);
+        const el = (tag, attrs = {}, text) => {
+          const node = document.createElementNS(NS, tag);
+          Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, v));
+          if (text !== undefined) node.textContent = text;
+          return node;
+        };
+
+        const params = new URLSearchParams(location.search);
+        const staticMode = params.has('static');
+        const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const state = {
+          mode: params.get('mode') === 'poc' ? 'poc' : 'prod',
+          step: 0,
+          playing: false,
+          timer: null,
+        };
+
+        function icon(kind, x, y) {
+          const g = el('g', {
+            transform: `translate(${x},${y})`,
+            stroke: '#fff',
+            'stroke-width': 2,
+            fill: 'none',
+            'stroke-linecap': 'round',
+            'stroke-linejoin': 'round',
+          });
+          const text = (t, size = 17) =>
+            g.append(
+              el(
+                'text',
+                {
+                  x: 14,
+                  y: 19,
+                  'text-anchor': 'middle',
+                  'font-size': size,
+                  'font-weight': 700,
+                  fill: '#fff',
+                  stroke: 'none',
+                },
+                t,
+              ),
+            );
+          switch (kind) {
+            case 'lambda':
+              text('λ', 19);
+              break;
+            case 'api':
+              g.append(el('path', { d: 'M9 7 L4 14 L9 21 M19 7 L24 14 L19 21 M16 6 L12 22' }));
+              break;
+            case 'queue':
+              [6, 12, 18].forEach((px) =>
+                g.append(el('rect', { x: px, y: 8, width: 4, height: 12, rx: 1 })),
+              );
+              break;
+            case 'db':
+              g.append(el('ellipse', { cx: 14, cy: 8, rx: 8, ry: 3 }));
+              g.append(el('path', { d: 'M6 8 V20 C6 24 22 24 22 20 V8 M6 14 C6 18 22 18 22 14' }));
+              break;
+            case 'spark':
+              g.append(
+                el('path', {
+                  d: 'M14 4 C15 11 17 13 24 14 C17 15 15 17 14 24 C13 17 11 15 4 14 C11 13 13 11 14 4 Z',
+                  fill: '#fff',
+                  stroke: 'none',
+                }),
+              );
+              break;
+            case 'key':
+              g.append(el('circle', { cx: 10, cy: 14, r: 4.5 }));
+              g.append(el('path', { d: 'M14.5 14 H24 M20 14 V18 M23 14 V17' }));
+              break;
+            case 'pulse':
+              g.append(el('path', { d: 'M3 15 H9 L12 8 L16 21 L19 15 H25' }));
+              break;
+            case 'search':
+              g.append(el('circle', { cx: 12, cy: 12, r: 6 }));
+              g.append(el('path', { d: 'M16.5 16.5 L23 23' }));
+              break;
+            case 'globe':
+              g.append(el('circle', { cx: 14, cy: 14, r: 9 }));
+              g.append(el('ellipse', { cx: 14, cy: 14, rx: 4, ry: 9 }));
+              g.append(el('path', { d: 'M5 14 H23' }));
+              break;
+            case 'user':
+              g.append(el('circle', { cx: 14, cy: 10, r: 4 }));
+              g.append(el('path', { d: 'M6 23 C6 17 22 17 22 23' }));
+              break;
+            case 'term':
+              text('>_', 13);
+              break;
+            case 'loop':
+              g.append(el('path', { d: 'M21 10 A8 8 0 1 0 22 16 M21 4 V10 H15' }));
+              break;
+            default:
+              break;
+          }
+          return g;
+        }
+
+        function pathD(pts) {
+          return pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x},${y}`).join(' ');
+        }
+
+        function renderLegend(mode) {
+          const used = new Set(MODES[mode].nodes.map((n) => n.cat));
+          const items = [...used].map(
+            (c) =>
+              `<span><i class="sw" style="background:${CAT[c].color}"></i>${CAT[c].label}</span>`,
+          );
+          items.push(
+            '<span><i class="ln"></i>llamada principal</span>',
+            '<span><i class="ln dash"></i>secundaria / opcional</span>',
+          );
+          if (mode === 'prod') items.push('<span><i class="ln err"></i>ruta de fallo</span>');
+          items.push(
+            '<span><i class="box-dash"></i>no desplegado / alternativa</span>',
+            '<span><i class="num" style="width:16px;height:16px;font-size:10px">1</i>paso del flujo</span>',
+          );
+          $('legend').innerHTML = items.join('');
+        }
+
+        function render() {
+          const m = MODES[state.mode];
+          ['layer-zones', 'layer-edges', 'layer-nodes', 'layer-badges', 'layer-particles'].forEach(
+            (id) => {
+              $(id).innerHTML = '';
+            },
+          );
+          $('subtitle').textContent = m.subtitle;
+          document
+            .querySelectorAll('.seg button')
+            .forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === state.mode)));
+
+          m.zones.forEach((z) => {
+            const style = {
+              ext: { fill: 'var(--zone-ext)', stroke: 'var(--zone-ext-line)', dash: '' },
+              aws: { fill: 'var(--zone-aws)', stroke: 'var(--zone-aws-line)', dash: '' },
+              region: { fill: 'none', stroke: 'var(--zone-aws-line)', dash: '6 5' },
+              sub: { fill: 'var(--zone-sub)', stroke: 'var(--line)', dash: '4 4' },
+            }[z.kind];
+            $('layer-zones').append(
+              el('rect', {
+                x: z.x,
+                y: z.y,
+                width: z.w,
+                height: z.h,
+                rx: 14,
+                fill: style.fill,
+                stroke: style.stroke,
+                'stroke-width': 1.4,
+                'stroke-dasharray': style.dash,
+                opacity: z.kind === 'sub' ? 0.75 : 1,
+              }),
+            );
+            $('layer-zones').append(
+              el(
+                'text',
+                { x: z.x + 12, y: z.y + 18, class: z.kind === 'sub' ? 'sub-label' : 'zone-label' },
+                z.label,
+              ),
+            );
+          });
+
+          m.edges.forEach((e) => {
+            const g = el('g', {
+              class: `edge${e.dash ? ' dash' : ''}${e.kind === 'err' ? ' err' : ''}`,
+              'data-id': e.id,
+            });
+            const p = el('path', { d: pathD(e.pts), 'marker-end': 'url(#arrow)' });
+            g.append(p);
+            if (e.label)
+              g.append(
+                el('text', { class: 'elabel', x: e.lx, y: e.ly, 'text-anchor': 'middle' }, e.label),
+              );
+            $('layer-edges').append(g);
+            if (e.badge) {
+              const b = el('g', { class: 'badge', 'data-id': e.id });
+              b.append(el('circle', { cx: e.badge[0], cy: e.badge[1], r: 9.5 }));
+              b.append(
+                el(
+                  'text',
+                  { x: e.badge[0], y: e.badge[1] + 3.7, 'text-anchor': 'middle' },
+                  String(e.steps[0]),
+                ),
+              );
+              $('layer-badges').append(b);
+            }
+          });
+
+          m.nodes.forEach((n) => {
+            const g = el('g', { class: `node${n.planned ? ' planned' : ''}`, 'data-id': n.id });
+            g.append(el('rect', { class: 'body', x: n.x, y: n.y, width: W, height: H, rx: 10 }));
+            g.append(
+              el('rect', {
+                x: n.x + 9,
+                y: n.y + 9,
+                width: 28,
+                height: 28,
+                rx: 6,
+                fill: CAT[n.cat].color,
+                opacity: n.planned ? 0.55 : 1,
+              }),
+            );
+            g.append(icon(n.icon, n.x + 9, n.y + 9));
+            g.append(el('text', { class: 'title', x: n.x + 45, y: n.y + 22 }, n.title));
+            g.append(el('text', { class: 'sub', x: n.x + 45, y: n.y + 37 }, n.sub));
+            if (n.tag)
+              g.append(el('text', { class: 'tag', x: n.x + 10, y: n.y + 55 }, n.tag.toUpperCase()));
+            $('layer-nodes').append(g);
+          });
+
+          renderLegend(state.mode);
+          renderSteps();
+          renderNotes();
+          applyStep();
+        }
+
+        function renderSteps() {
+          const m = MODES[state.mode];
+          const list = $('step-list');
+          list.innerHTML = '';
+          const items = [{ title: 'Vista general' }, ...m.steps];
+          items.forEach((s, i) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.innerHTML = `<span class="num">${i === 0 ? '∗' : i}</span><span>${s.title}</span>`;
+            b.addEventListener('click', () => {
+              stop();
+              state.step = i;
+              applyStep();
+            });
+            list.append(b);
+          });
+        }
+
+        function renderNotes() {
+          $('notes').innerHTML = MODES[state.mode].notes
+            .map(
+              (n) =>
+                `<div class="card"><h3>${n.title}</h3><ul>${n.items.map((i) => `<li>${i}</li>`).join('')}</ul></div>`,
+            )
+            .join('');
+        }
+
+        function applyStep() {
+          const m = MODES[state.mode];
+          const svg = $('diagram');
+          const s = state.step;
+          svg.classList.toggle('focus', s > 0);
+          const activeEdges =
+            s > 0
+              ? m.edges.filter((e) => e.steps.includes(s)).map((e) => e.id)
+              : m.edges.map((e) => e.id);
+          const activeNodes = s > 0 ? m.steps[s - 1].nodes : m.nodes.map((n) => n.id);
+          svg
+            .querySelectorAll('.edge, .badge')
+            .forEach((g) => g.classList.toggle('on', s > 0 && activeEdges.includes(g.dataset.id)));
+          svg
+            .querySelectorAll('.node')
+            .forEach((g) => g.classList.toggle('on', activeNodes.includes(g.dataset.id)));
+          // El número de cada paso refleja el paso activo cuando una flecha participa en varios.
+          svg.querySelectorAll('.badge').forEach((b) => {
+            const edge = m.edges.find((e) => e.id === b.dataset.id);
+            b.querySelector('text').textContent = String(
+              s > 0 && edge.steps.includes(s) ? s : edge.steps[0],
+            );
+          });
+          [...$('step-list').children].forEach((b, i) =>
+            i === s ? b.setAttribute('aria-current', 'step') : b.removeAttribute('aria-current'),
+          );
+
+          if (s === 0) {
+            $('detail-title').textContent =
+              state.mode === 'prod' ? 'Producción propuesta en AWS' : 'PoC implementada';
+            $('detail-text').textContent = m.subtitle;
+            $('detail-points').innerHTML = m.steps
+              .map((st, i) => `<li><strong>${i + 1}.</strong> ${st.title}</li>`)
+              .join('');
+          } else {
+            const st = m.steps[s - 1];
+            $('detail-title').textContent = `${s}. ${st.title}`;
+            $('detail-text').textContent = st.text;
+            $('detail-points').innerHTML = st.points.map((p) => `<li>${p}</li>`).join('');
+          }
+          $('prev').disabled = s === 0;
+          $('next').disabled = s === m.steps.length;
+          spawnParticles(activeEdges);
+        }
+
+        // Partículas que recorren las rutas activas (se omiten en modo estático o con movimiento reducido).
+        let particles = [];
+        let raf = 0;
+        function spawnParticles(edgeIds) {
+          cancelAnimationFrame(raf);
+          $('layer-particles').innerHTML = '';
+          particles = [];
+          if (staticMode || reduceMotion) return;
+          const m = MODES[state.mode];
+          edgeIds.forEach((id) => {
+            const e = m.edges.find((x) => x.id === id);
+            const path = $('layer-edges').querySelector(`[data-id="${id}"] path`);
+            const len = path.getTotalLength();
+            const count = state.step > 0 ? 3 : 1;
+            for (let i = 0; i < count; i += 1) {
+              const c = el('circle', {
+                r: state.step > 0 ? 4 : 3,
+                class: `particle${e.kind === 'err' ? ' err' : ''}`,
+              });
+              $('layer-particles').append(c);
+              particles.push({
+                c,
+                path,
+                len,
+                offset: i / count,
+                speed: 90 + Math.min(len, 400) / 6,
+              });
+            }
+          });
+          const t0 = performance.now();
+          const tick = (t) => {
+            particles.forEach((p) => {
+              const dist = (((t - t0) / 1000) * p.speed + p.offset * p.len) % p.len;
+              const pt = p.path.getPointAtLength(dist);
+              p.c.setAttribute('cx', pt.x);
+              p.c.setAttribute('cy', pt.y);
+            });
+            raf = requestAnimationFrame(tick);
+          };
+          raf = requestAnimationFrame(tick);
+        }
+
+        const STEP_MS = 4500;
+        function stop() {
+          state.playing = false;
+          clearInterval(state.timer);
+          $('play').textContent = '▶ Reproducir';
+        }
+        function play() {
+          state.playing = true;
+          $('play').textContent = '❚❚ Pausar';
+          if (state.step >= MODES[state.mode].steps.length) state.step = 0;
+          const advance = () => {
+            const total = MODES[state.mode].steps.length;
+            if (state.step >= total) {
+              stop();
+              return;
+            }
+            state.step += 1;
+            applyStep();
+          };
+          advance();
+          state.timer = setInterval(advance, STEP_MS);
+        }
+
+        document.querySelectorAll('.seg button').forEach((b) =>
+          b.addEventListener('click', () => {
+            stop();
+            state.mode = b.dataset.mode;
+            state.step = 0;
+            render();
+          }),
+        );
+        $('play').addEventListener('click', () => (state.playing ? stop() : play()));
+        $('prev').addEventListener('click', () => {
+          stop();
+          state.step = Math.max(0, state.step - 1);
+          applyStep();
+        });
+        $('next').addEventListener('click', () => {
+          stop();
+          state.step = Math.min(MODES[state.mode].steps.length, state.step + 1);
+          applyStep();
+        });
+        $('theme').addEventListener('click', () => {
+          const root = document.documentElement;
+          const dark = root.dataset.theme
+            ? root.dataset.theme === 'dark'
+            : window.matchMedia('(prefers-color-scheme: dark)').matches;
+          root.dataset.theme = dark ? 'light' : 'dark';
+        });
+        document.addEventListener('keydown', (ev) => {
+          if (ev.key === 'ArrowRight') $('next').click();
+          if (ev.key === 'ArrowLeft') $('prev').click();
+        });
+
+        render();
+        const initialStep = Number(params.get('step'));
+        if (
+          Number.isInteger(initialStep) &&
+          initialStep > 0 &&
+          initialStep <= MODES[state.mode].steps.length
+        ) {
+          state.step = initialStep;
+          applyStep();
+        }
+      })();
+    </script>
+  </body>
+</html>
