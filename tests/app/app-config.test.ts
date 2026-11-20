@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadAppConfig } from '../../src/app/config/app-config.js';
+import { httpRunsAgent, loadAppConfig } from '../../src/app/config/app-config.js';
 
 describe('loadAppConfig', () => {
   it('aplica defaults y convierte números', () => {
@@ -37,6 +37,27 @@ describe('loadAppConfig', () => {
     expect(loadAppConfig({ LLM_PROVIDER: 'bedrock' }).BEDROCK_MODEL).toBe(
       'anthropic.claude-haiku-5-5',
     );
+  });
+
+  it('sin el agente no exige credenciales del LLM ni de la búsqueda (λ api en modo async)', () => {
+    const env = {
+      LLM_PROVIDER: 'openai-compatible',
+      SEARCH_PROVIDER: 'tavily',
+      EXECUTION_MODE: 'async',
+      JOBS_QUEUE_URL: 'https://sqs.us-east-2.amazonaws.com/0/jobs',
+    };
+
+    expect(() => loadAppConfig(env)).toThrow(/LLM_API_KEY/);
+    expect(loadAppConfig(env, { runsAgent: false }).EXECUTION_MODE).toBe('async');
+  });
+
+  it.each([
+    [{}, true],
+    [{ EXECUTION_MODE: '' }, true],
+    [{ EXECUTION_MODE: 'sync' }, true],
+    [{ EXECUTION_MODE: 'async' }, false],
+  ])('el proceso HTTP ejecuta el agente solo en modo sync (%o → %s)', (env, expected) => {
+    expect(httpRunsAgent(env)).toBe(expected);
   });
 
   it('rechaza un proveedor desconocido', () => {

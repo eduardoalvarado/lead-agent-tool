@@ -1,4 +1,14 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Inject, Post, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Inject,
+  Optional,
+  Post,
+  Res,
+} from '@nestjs/common';
 import {
   ApiAcceptedResponse,
   ApiBearerAuth,
@@ -15,9 +25,7 @@ import type { Lead } from '../../core/domain/lead.js';
 import type { AgentRunSummary } from '../../core/domain/run-summary.js';
 import { type SearchCriteria, SearchCriteriaSchema } from '../../core/domain/search-criteria.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
-import type { AppConfig } from '../config/app-config.js';
 import {
-  APP_CONFIG,
   LIST_LEADS_USE_CASE,
   SEARCH_LEADS_USE_CASE,
   SUBMIT_SEARCH_JOB_USE_CASE,
@@ -33,10 +41,12 @@ import { SearchLeadsRequestDto } from './dto/search-leads-request.dto.js';
 @Controller('leads')
 export class LeadsController {
   constructor(
-    @Inject(SEARCH_LEADS_USE_CASE) private readonly searchLeads: SearchLeadsUseCase,
     @Inject(LIST_LEADS_USE_CASE) private readonly listLeads: ListLeadsUseCase,
     @Inject(SUBMIT_SEARCH_JOB_USE_CASE) private readonly submitJob: SubmitSearchJobUseCase,
-    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    // Solo existe si este proceso ejecuta el agente (EXECUTION_MODE=sync); ver AppModule.
+    @Optional()
+    @Inject(SEARCH_LEADS_USE_CASE)
+    private readonly searchLeads?: SearchLeadsUseCase,
   ) {}
 
   @Post('search')
@@ -53,7 +63,7 @@ export class LeadsController {
     @Body(new ZodValidationPipe(SearchCriteriaSchema)) criteria: SearchCriteria,
     @Res({ passthrough: true }) response: Response,
   ): Promise<AgentRunSummary | JobAcceptedDto> {
-    if (this.config.EXECUTION_MODE === 'sync') return this.searchLeads.execute(criteria);
+    if (this.searchLeads) return this.searchLeads.execute(criteria);
 
     const job = await this.submitJob.execute(criteria);
     response.status(HttpStatus.ACCEPTED);

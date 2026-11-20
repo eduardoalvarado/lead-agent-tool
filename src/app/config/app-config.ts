@@ -10,52 +10,66 @@ const REQUIRES_API_KEY: ReadonlySet<string> = new Set(['groq', 'openai-compatibl
 const positiveInt = (fallback: number) => z.coerce.number().int().positive().default(fallback);
 
 /** Variables de entorno de la aplicación, validadas al arrancar (falla rápido si falta algo). */
-export const AppConfigSchema = z
-  .object({
-    PORT: positiveInt(3000),
-    LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+const AppConfigFieldsSchema = z.object({
+  PORT: positiveInt(3000),
+  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 
-    LLM_PROVIDER: z.enum(LLM_PROVIDERS).default('groq'),
-    LLM_TIMEOUT_MS: positiveInt(60_000),
-    LLM_MAX_RETRIES: z.coerce.number().int().min(0).default(2),
-    // Proveedores compatibles con OpenAI (groq, ollama, openai-compatible).
-    LLM_API_KEY: z.string().optional(),
-    LLM_MODEL: z.string().min(1).optional(),
-    LLM_BASE_URL: z.url().optional(),
-    // Esfuerzo de razonamiento (modelos que lo admiten, p. ej. gpt-oss): menos esfuerzo = menos tokens.
-    LLM_REASONING_EFFORT: z.enum(['low', 'medium', 'high']).optional(),
-    // Temperatura: algunos modelos (p. ej. Claude actuales) rechazan el parámetro; si no se define
-    // y el preset no la fija, no se envía.
-    LLM_TEMPERATURE: z.coerce.number().min(0).max(2).optional(),
-    AWS_REGION: z.string().min(1).default('us-east-2'),
-    BEDROCK_MODEL: z.string().min(1).default('anthropic.claude-haiku-5-5'),
-    BEDROCK_EFFORT: z.enum(['low', 'medium', 'high']).default('medium'),
-    BEDROCK_MAX_TOKENS: positiveInt(16_000),
+  LLM_PROVIDER: z.enum(LLM_PROVIDERS).default('groq'),
+  LLM_TIMEOUT_MS: positiveInt(60_000),
+  LLM_MAX_RETRIES: z.coerce.number().int().min(0).default(2),
+  // Proveedores compatibles con OpenAI (groq, ollama, openai-compatible).
+  LLM_API_KEY: z.string().optional(),
+  LLM_MODEL: z.string().min(1).optional(),
+  LLM_BASE_URL: z.url().optional(),
+  // Esfuerzo de razonamiento (modelos que lo admiten, p. ej. gpt-oss): menos esfuerzo = menos tokens.
+  LLM_REASONING_EFFORT: z.enum(['low', 'medium', 'high']).optional(),
+  // Temperatura: algunos modelos (p. ej. Claude actuales) rechazan el parámetro; si no se define
+  // y el preset no la fija, no se envía.
+  LLM_TEMPERATURE: z.coerce.number().min(0).max(2).optional(),
+  AWS_REGION: z.string().min(1).default('us-east-2'),
+  BEDROCK_MODEL: z.string().min(1).default('anthropic.claude-haiku-5-5'),
+  BEDROCK_EFFORT: z.enum(['low', 'medium', 'high']).default('medium'),
+  BEDROCK_MAX_TOKENS: positiveInt(16_000),
 
-    SEARCH_PROVIDER: z.enum(['tavily', 'mock']).default('mock'),
-    TAVILY_API_KEY: z.string().optional(),
-    HTTP_TIMEOUT_MS: positiveInt(10_000),
+  SEARCH_PROVIDER: z.enum(['tavily', 'mock']).default('mock'),
+  TAVILY_API_KEY: z.string().optional(),
+  HTTP_TIMEOUT_MS: positiveInt(10_000),
 
-    DYNAMO_ENDPOINT: z.string().optional(),
-    DYNAMO_TABLE: z.string().min(1).default('leads'),
+  DYNAMO_ENDPOINT: z.string().optional(),
+  DYNAMO_TABLE: z.string().min(1).default('leads'),
 
-    // sync (local): POST /leads/search ejecuta el agente y responde el resumen.
-    // async (AWS): registra un job, lo encola en SQS y responde 202; un worker lo procesa.
-    EXECUTION_MODE: z.enum(['sync', 'async']).default('sync'),
-    JOBS_TABLE: z.string().min(1).default('jobs'),
-    JOBS_QUEUE_URL: z.url().optional(),
-    // Entregas de un mensaje antes de ir a la DLQ; debe coincidir con maxReceiveCount de la cola.
-    JOBS_MAX_ATTEMPTS: positiveInt(3),
-    // Orígenes permitidos para CORS (separados por coma), p. ej. el frontend en GitHub Pages.
-    CORS_ORIGINS: z.string().optional(),
+  // sync (local): POST /leads/search ejecuta el agente y responde el resumen.
+  // async (AWS): registra un job, lo encola en SQS y responde 202; un worker lo procesa.
+  EXECUTION_MODE: z.enum(['sync', 'async']).default('sync'),
+  JOBS_TABLE: z.string().min(1).default('jobs'),
+  JOBS_QUEUE_URL: z.url().optional(),
+  // Entregas de un mensaje antes de ir a la DLQ; debe coincidir con maxReceiveCount de la cola.
+  JOBS_MAX_ATTEMPTS: positiveInt(3),
+  // Orígenes permitidos para CORS (separados por coma), p. ej. el frontend en GitHub Pages.
+  CORS_ORIGINS: z.string().optional(),
 
-    AGENT_MAX_ITERATIONS: positiveInt(20),
-    AGENT_MAX_LEADS: positiveInt(10),
-  })
-  .refine((env) => !REQUIRES_API_KEY.has(env.LLM_PROVIDER) || Boolean(env.LLM_API_KEY), {
+  AGENT_MAX_ITERATIONS: positiveInt(20),
+  AGENT_MAX_LEADS: positiveInt(10),
+});
+
+/** Configuración común a todos los procesos. */
+export const AppConfigSchema = AppConfigFieldsSchema.refine(
+  (env) => env.EXECUTION_MODE !== 'async' || Boolean(env.JOBS_QUEUE_URL),
+  { message: 'JOBS_QUEUE_URL es obligatoria con EXECUTION_MODE=async', path: ['JOBS_QUEUE_URL'] },
+);
+
+/**
+ * Configuración de un proceso que ejecuta el agente: además exige las credenciales del LLM y de
+ * la búsqueda. Los procesos que no lo ejecutan (la λ api en modo async) no las necesitan ni las
+ * reciben: mínimo privilegio.
+ */
+const AgentAppConfigSchema = AppConfigSchema.refine(
+  (env) => !REQUIRES_API_KEY.has(env.LLM_PROVIDER) || Boolean(env.LLM_API_KEY),
+  {
     message: 'LLM_API_KEY es obligatoria con LLM_PROVIDER=groq u openai-compatible',
     path: ['LLM_API_KEY'],
-  })
+  },
+)
   .refine(
     (env) => env.LLM_PROVIDER !== 'openai-compatible' || Boolean(env.LLM_BASE_URL && env.LLM_MODEL),
     {
@@ -63,10 +77,6 @@ export const AppConfigSchema = z
       path: ['LLM_BASE_URL'],
     },
   )
-  .refine((env) => env.EXECUTION_MODE !== 'async' || Boolean(env.JOBS_QUEUE_URL), {
-    message: 'JOBS_QUEUE_URL es obligatoria con EXECUTION_MODE=async',
-    path: ['JOBS_QUEUE_URL'],
-  })
   .refine((env) => env.SEARCH_PROVIDER !== 'tavily' || Boolean(env.TAVILY_API_KEY), {
     message: 'TAVILY_API_KEY es obligatoria con SEARCH_PROVIDER=tavily',
     path: ['TAVILY_API_KEY'],
@@ -74,14 +84,32 @@ export const AppConfigSchema = z
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 
+export interface ConfigOptions {
+  /** Si este proceso ejecuta el agente (y por tanto necesita las credenciales del LLM y la búsqueda). */
+  readonly runsAgent: boolean;
+}
+
+function definedValues(env: NodeJS.ProcessEnv): Record<string, string | undefined> {
+  return Object.fromEntries(Object.entries(env).filter(([, value]) => value !== ''));
+}
+
 /** Valida el entorno; las variables vacías (`KEY=`) se tratan como ausentes. */
-export function loadAppConfig(env: NodeJS.ProcessEnv): AppConfig {
-  const defined = Object.fromEntries(Object.entries(env).filter(([, value]) => value !== ''));
-  const parsed = AppConfigSchema.safeParse(defined);
+export function loadAppConfig(
+  env: NodeJS.ProcessEnv,
+  { runsAgent }: ConfigOptions = { runsAgent: true },
+): AppConfig {
+  const schema = runsAgent ? AgentAppConfigSchema : AppConfigSchema;
+  const parsed = schema.safeParse(definedValues(env));
   if (!parsed.success) {
     throw new Error(`Configuración inválida:\n${z.prettifyError(parsed.error)}`);
   }
   return parsed.data;
+}
+
+/** El proceso HTTP ejecuta el agente solo en modo sync; en async lo hace el worker. */
+export function httpRunsAgent(env: NodeJS.ProcessEnv): boolean {
+  const mode = AppConfigFieldsSchema.shape.EXECUTION_MODE.parse(definedValues(env).EXECUTION_MODE);
+  return mode === 'sync';
 }
 
 /** Carga `.env` si existe (desarrollo local). En Lambda las variables vienen del entorno. */

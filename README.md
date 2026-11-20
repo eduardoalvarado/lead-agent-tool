@@ -89,12 +89,13 @@ SQS jobs (lote 1, DLQ tras 3 fallos + alarma) ─► λ agent-worker (LeadAgent,
                                                   ├─► OpenRouter (Claude Haiku 5.5) · alternativa: Amazon Bedrock
                                                   ├─► Tavily + sitios web (HTTPS saliente)
                                                   └─► DynamoDB (leads con escritura condicional + estado del job)
-Keys de LLM y Tavily en Secrets Manager · roles IAM por Lambda · CloudWatch Logs (14 días) · runtime nodejs24.x
+Keys de LLM y Tavily en Secrets Manager (solo el worker las lee) · roles IAM por Lambda · CloudWatch Logs (14 días) · nodejs24.x
 ```
 
 - **Por qué asíncrono:** una ejecución del agente tarda minutos y API Gateway corta a los 29 s. La API responde `202` con `jobId` y el cliente consulta el estado (la app web lo hace cada 4 s).
 - **Ningún job queda en `running` para siempre:** un fallo del LLM o de un servicio externo cierra el job sin reintentar (`completed` con `stopReason: llm_error`, o `failed`); un error inesperado se reintenta y, en el último intento (`JOBS_MAX_ATTEMPTS`, el mismo valor que `maxReceiveCount` de la cola), el worker marca el job `failed` antes de que el mensaje pase a la DLQ. Para que el timeout de la Lambda no mate al agente a mitad de camino, el agente tiene un plazo: el tiempo restante de la invocación menos el peor caso de un paso; al vencer, corta con lo avanzado (`stopReason: time_limit`).
-- **Por qué dos Lambdas:** la API es corta, escala con el tráfico y solo necesita DynamoDB y SQS; el worker dura minutos y necesita el LLM, Secrets Manager y salida a internet. El evento de SQS limita el worker a **2 ejecuciones en paralelo**, el freno que protege los rate limits del LLM y de Tavily (la cuenta tiene un límite de 10 ejecuciones concurrentes, que impide reservar concurrencia).
+- **Por qué dos Lambdas:** la API es corta, escala con el tráfico y solo necesita DynamoDB y SQS; el worker dura minutos y necesita el LLM, Secrets Manager y salida a internet.
+- **Mínimo privilegio:** las API keys del LLM y de Tavily solo llegan al worker. La λ api no tiene permiso sobre Secrets Manager (lee leads, gestiona jobs y encola) y ni siquiera construye el agente: `AppModule.forRoot({ runsAgent })` incluye el módulo del agente solo en los procesos que lo ejecutan (worker, CLI y API en modo `sync`), y la configuración exige esas credenciales solo en ellos. Si la API se viera comprometida, no expondría las keys. El evento de SQS limita el worker a **2 ejecuciones en paralelo**, el freno que protege los rate limits del LLM y de Tavily (la cuenta tiene un límite de 10 ejecuciones concurrentes, que impide reservar concurrencia).
 - **Dentro de AWS:** Cognito, API Gateway, Lambda, SQS + DLQ, DynamoDB, Secrets Manager y CloudWatch. **Fuera de AWS:** OpenRouter (LLM), Tavily y los sitios web públicos de las empresas.
 - **Cambiar a Bedrock:** `npm run aws:deploy -- LlmProvider=bedrock`. El parámetro cambia el adaptador y concede al worker el permiso IAM para invocar Claude; no hay cambios de código. Requiere que la cuenta tenga cuota y acceso a los modelos de Anthropic.
 - **Verificado en AWS:** `POST` → `202` → `pending` → `running` → `completed` en alrededor de 1 minuto, con búsqueda real en Tavily (6 clínicas dentales de Lima en una prueba, 8 agencias de marketing en otra).
@@ -120,7 +121,9 @@ src/
     ├── config/                   # ConfigModule + validación del entorno con Zod
     ├── common/                   # pipe de validación Zod, filtro de errores de dominio → HTTP
     ├── leads/ · jobs/            # LeadsController, JobsController, DTOs de Swagger
+    ├── agent/                    # AgentModule: solo en los procesos que ejecutan el agente
     ├── providers/                # tokens, factories (composition root), registro LLM_ADAPTERS
+    ├── app.module.ts             # AppModule.forRoot({ runsAgent }): composición por proceso
     ├── http-app.factory.ts       # app HTTP compartida por main.ts y lambda.ts
     ├── main.ts                   # servidor HTTP local
     ├── cli.ts                    # CLI (createApplicationContext)

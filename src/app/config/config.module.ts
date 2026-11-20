@@ -1,10 +1,15 @@
-import { Global, Module } from '@nestjs/common';
+import { type DynamicModule, Module } from '@nestjs/common';
 import { APP_CONFIG } from '../providers/tokens.js';
-import { loadAppConfig } from './app-config.js';
+import { type ConfigOptions, loadAppConfig } from './app-config.js';
 
-@Global()
-@Module({
-  providers: [{ provide: APP_CONFIG, useFactory: () => loadAppConfig(process.env) }],
-  exports: [APP_CONFIG],
-})
-export class ConfigModule {}
+@Module({})
+export class ConfigModule {
+  static forRoot(options: ConfigOptions): DynamicModule {
+    return {
+      module: ConfigModule,
+      global: true,
+      providers: [{ provide: APP_CONFIG, useFactory: () => loadAppConfig(process.env, options) }],
+      exports: [APP_CONFIG],
+    };
+  }
+}

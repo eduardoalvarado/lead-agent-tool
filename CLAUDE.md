@@ -56,6 +56,7 @@ src/app/             NestJS: config, módulos, controllers, providers/tokens, ma
 - Hacer cumplir la regla con ESLint `no-restricted-imports` en `src/core/**` y `src/infrastructure/**`.
 - Los tests del núcleo instancian clases directamente con fakes de los puertos, **sin levantar Nest**.
 - Todos los puntos de entrada usan el mismo `AppModule` y el mismo `LeadAgent`; ninguno contiene lógica de negocio.
+- Composición por proceso (mínimo privilegio): `AppModule.forRoot({ runsAgent })` incluye `AgentModule` (LLM, búsqueda, lectura de páginas, agente y los casos de uso que lo ejecutan) solo en el worker, la CLI y la API en modo `sync`. `loadAppConfig(env, { runsAgent })` exige las credenciales del LLM y de la búsqueda solo en esos procesos. La λ api en AWS no recibe ni puede leer las keys.
 - `EXECUTION_MODE` elige el flujo de `POST /leads/search` (decisión en la sección 2 del README):
   - `sync` (local): HTTP (`main.ts`) y CLI (`cli.ts`, `NestFactory.createApplicationContext`) ejecutan `SearchLeadsUseCase` y responden el resumen.
   - `async` (AWS): la λ `api` (`lambda.ts`) ejecuta `SubmitSearchJobUseCase` (crea el job, lo encola y responde `202` + `jobId`); la λ `agent-worker` (`worker.ts`, evento SQS) ejecuta `ProcessSearchJobUseCase`; `GET /jobs/{id}` usa `GetJobUseCase`.

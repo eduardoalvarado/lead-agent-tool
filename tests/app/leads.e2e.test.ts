@@ -8,6 +8,7 @@ import {
   APP_CONFIG,
   JOB_QUEUE,
   JOB_REPOSITORY,
+  LEAD_AGENT,
   LEAD_REPOSITORY,
   LLM_PROVIDER,
 } from '../../src/app/providers/tokens.js';
@@ -37,7 +38,9 @@ const TEST_CONFIG = loadAppConfig({
 let app: INestApplication | undefined;
 
 async function startApp(llm: LLMProvider, repository: LeadRepository): Promise<string> {
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+  const moduleRef = await Test.createTestingModule({
+    imports: [AppModule.forRoot({ runsAgent: true })],
+  })
     .overrideProvider(APP_CONFIG)
     .useValue(TEST_CONFIG)
     .overrideProvider(LLM_PROVIDER)
@@ -143,15 +146,21 @@ describe('Flujo asíncrono (EXECUTION_MODE=async, e2e)', () => {
   it('POST /leads/search responde 202 con el jobId y GET /jobs/{id} devuelve el job', async () => {
     const jobs = new FakeJobRepository();
     const queue = new FakeJobQueue();
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    // Como la λ api en AWS: sin credenciales del LLM ni de la búsqueda.
+    const moduleRef = await Test.createTestingModule({
+      imports: [AppModule.forRoot({ runsAgent: false })],
+    })
       .overrideProvider(APP_CONFIG)
       .useValue(
-        loadAppConfig({
-          LLM_API_KEY: 'test',
-          EXECUTION_MODE: 'async',
-          JOBS_QUEUE_URL: 'https://sqs.us-east-2.amazonaws.com/0/jobs',
-          LOG_LEVEL: 'error',
-        }),
+        loadAppConfig(
+          {
+            EXECUTION_MODE: 'async',
+            SEARCH_PROVIDER: 'tavily',
+            JOBS_QUEUE_URL: 'https://sqs.us-east-2.amazonaws.com/0/jobs',
+            LOG_LEVEL: 'error',
+          },
+          { runsAgent: false },
+        ),
       )
       .overrideProvider(JOB_REPOSITORY)
       .useValue(jobs)
@@ -178,5 +187,8 @@ describe('Flujo asíncrono (EXECUTION_MODE=async, e2e)', () => {
     expect(status.status).toBe(200);
     expect(await status.json()).toMatchObject({ jobId: body.jobId, status: 'pending' });
     expect(missing.status).toBe(404);
+    // El proceso de la API no construye el agente ni sus adaptadores.
+    expect(() => moduleRef.get(LEAD_AGENT)).toThrow();
+    expect(() => moduleRef.get(LLM_PROVIDER)).toThrow();
   });
 });

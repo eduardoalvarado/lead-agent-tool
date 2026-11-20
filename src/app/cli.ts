@@ -7,7 +7,7 @@ import { AppModule } from './app.module.js';
 import { prepareEnvironment } from './config/app-config.js';
 import { SEARCH_LEADS_USE_CASE } from './providers/tokens.js';
 
-// CLI: mismo caso de uso que HTTP y Lambda, sin servidor (createApplicationContext).
+// CLI: mismo caso de uso que la API en modo sync, sin servidor (createApplicationContext).
 // Uso: npm run agent -- --sector "Clínicas dentales" --location "Lima, Perú"
 const { values } = parseArgs({
   options: {
@@ -17,7 +17,9 @@ const { values } = parseArgs({
 });
 
 await prepareEnvironment();
-const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
+const app = await NestFactory.createApplicationContext(AppModule.forRoot({ runsAgent: true }), {
+  logger: ['error', 'warn'],
+});
 try {
   const summary = await app
     .get<SearchLeadsUseCase>(SEARCH_LEADS_USE_CASE)

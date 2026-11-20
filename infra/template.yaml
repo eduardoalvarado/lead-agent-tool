@@ -56,6 +56,8 @@ Globals:
     Runtime: nodejs24.x
     Architectures: [x86_64]
     MemorySize: 1024
+    # Solo lo común a ambas Lambdas. Las credenciales y la configuración del agente van
+    # únicamente en el worker: la λ api no ejecuta el agente (mínimo privilegio).
     Environment:
       Variables:
         NODE_OPTIONS: --enable-source-maps
@@ -63,15 +65,6 @@ Globals:
         DYNAMO_TABLE: !Ref LeadsTable
         JOBS_TABLE: !Ref JobsTable
         JOBS_QUEUE_URL: !Ref JobsQueue
-        JOBS_MAX_ATTEMPTS: !Ref JobMaxAttempts
-        SECRETS_ID: !Ref SecretName
-        LLM_PROVIDER: !If [UseBedrock, bedrock, openai-compatible]
-        LLM_MODEL: !Ref LlmModel
-        LLM_BASE_URL: !Ref LlmBaseUrl
-        LLM_REASONING_EFFORT: !Ref LlmReasoningEffort
-        BEDROCK_MODEL: !Ref BedrockModel
-        SEARCH_PROVIDER: !Ref SearchProvider
-        CORS_ORIGINS: !Ref AllowedOrigin
         LOG_LEVEL: info
 
 Resources:
@@ -137,12 +130,14 @@ Resources:
       CodeUri: ../.aws-build/app
       Handler: dist/app/lambda.handler
       Timeout: 29
+      Environment:
+        Variables:
+          CORS_ORIGINS: !Ref AllowedOrigin
+      # Sin acceso a Secrets Manager: la API solo lee leads, gestiona jobs y encola.
       Policies:
-        - DynamoDBCrudPolicy: { TableName: !Ref LeadsTable }
+        - DynamoDBReadPolicy: { TableName: !Ref LeadsTable }
         - DynamoDBCrudPolicy: { TableName: !Ref JobsTable }
         - SQSSendMessagePolicy: { QueueName: !GetAtt JobsQueue.QueueName }
-        - AWSSecretsManagerGetSecretValuePolicy:
-            SecretArn: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretName}-*
       Events:
         Root:
           Type: Api
@@ -178,6 +173,16 @@ Resources:
       CodeUri: ../.aws-build/app
       Handler: dist/app/worker.handler
       Timeout: 900
+      Environment:
+        Variables:
+          SECRETS_ID: !Ref SecretName
+          JOBS_MAX_ATTEMPTS: !Ref JobMaxAttempts
+          LLM_PROVIDER: !If [UseBedrock, bedrock, openai-compatible]
+          LLM_MODEL: !Ref LlmModel
+          LLM_BASE_URL: !Ref LlmBaseUrl
+          LLM_REASONING_EFFORT: !Ref LlmReasoningEffort
+          BEDROCK_MODEL: !Ref BedrockModel
+          SEARCH_PROVIDER: !Ref SearchProvider
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref LeadsTable }
         - DynamoDBCrudPolicy: { TableName: !Ref JobsTable }

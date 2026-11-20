@@ -3,7 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module.js';
 import { DomainExceptionFilter } from './common/domain-exception.filter.js';
-import { type AppConfig, prepareEnvironment } from './config/app-config.js';
+import { type AppConfig, httpRunsAgent, prepareEnvironment } from './config/app-config.js';
 import { APP_CONFIG } from './providers/tokens.js';
 
 const SWAGGER_PATH = 'docs';
@@ -11,7 +11,9 @@ const SWAGGER_PATH = 'docs';
 /** Aplicación HTTP compartida por el servidor local (`main.ts`) y el handler Lambda. */
 export async function createHttpApp(): Promise<INestApplication> {
   await prepareEnvironment();
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(
+    AppModule.forRoot({ runsAgent: httpRunsAgent(process.env) }),
+  );
   app.useGlobalFilters(new DomainExceptionFilter());
 
   const { CORS_ORIGINS } = app.get<AppConfig>(APP_CONFIG);

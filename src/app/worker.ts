@@ -19,7 +19,9 @@ let worker: Worker | undefined;
 
 async function bootstrap(): Promise<Worker> {
   await prepareEnvironment();
-  const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
+  const app = await NestFactory.createApplicationContext(AppModule.forRoot({ runsAgent: true }), {
+    logger: ['error', 'warn'],
+  });
   return {
     processor: app.get<ProcessSearchJobUseCase>(PROCESS_SEARCH_JOB_USE_CASE),
     config: app.get<AppConfig>(APP_CONFIG),
