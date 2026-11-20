@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lead Agent · Diagramas</title>
+    <meta
+      name="description"
+      content="Diagramas interactivos del Lead Agent: arquitectura (PoC y producción en AWS) y actividades del bucle ReAct."
+    />
+    <style>
+      :root {
+        --bg: #f5f7fa;
+        --panel: #ffffff;
+        --ink: #172033;
+        --muted: #5b6577;
+        --line: #d9dee7;
+        --accent: #0f6fde;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f141c;
+          --panel: #161d28;
+          --ink: #e6ebf2;
+          --muted: #9aa5b6;
+          --line: #2a3443;
+          --accent: #5aa7ff;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          15px/1.5 ui-sans-serif,
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          Arial,
+          sans-serif;
+      }
+      main {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 40px 16px;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: 26px;
+      }
+      .lead {
+        margin: 0 0 28px;
+        color: var(--muted);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 16px;
+      }
+      a.card {
+        display: block;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 14px;
+        color: inherit;
+        text-decoration: none;
+        transition: border-color 0.2s ease;
+      }
+      a.card:hover,
+      a.card:focus-visible {
+        border-color: var(--accent);
+      }
+      .card img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        margin-bottom: 12px;
+      }
+      .card h2 {
+        margin: 0 0 4px;
+        font-size: 17px;
+      }
+      .card p {
+        margin: 0;
+        color: var(--muted);
+      }
+      footer {
+        margin-top: 28px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      footer a {
+        color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Lead Agent · Diagramas</h1>
+      <p class="lead">
+        Agente IA que busca empresas por sector y ubicación, extrae y cualifica sus datos con un LLM
+        y los guarda en DynamoDB. Los diagramas son interactivos: elige un paso o reprodúcelo.
+      </p>
+      <div class="grid">
+        <a class="card" href="architecture.html">
+          <img
+            src="architecture.png"
+            alt="Arquitectura de producción propuesta en AWS"
+            width="1500"
+            height="690"
+          />
+          <h2>Arquitectura</h2>
+          <p>
+            Producción propuesta en AWS (2 Lambdas, SQS, DynamoDB, Bedrock) y la PoC implementada,
+            con el flujo animado paso a paso.
+          </p>
+        </a>
+        <a class="card" href="agent-activity.html">
+          <img
+            src="agent-activity.png"
+            alt="Diagrama de actividades del bucle ReAct del agente"
+            width="1500"
+            height="690"
+          />
+          <h2>Actividades del agente</h2>
+          <p>
+            Bucle ReAct: el LLM razona, elige un tool, observa el resultado y repite hasta terminar;
+            guardas y cortes controlados.
+          </p>
+        </a>
+      </div>
+      <footer>
+        Código, decisiones y ejecución en
+        <a href="https://github.com/eduardoalvarado/lead-agent-tool">el repositorio</a>.
+      </footer>
+    </main>
+  </body>
+</html>

@@ -68,13 +68,13 @@ Beneficios: el agente se testea sin levantar Nest, el framework y el LLM son ree
 
 ![PoC implementada](docs/architecture-poc.png)
 
-**Flujo del agente:** diagrama de actividades del bucle ReAct en [`docs/agent-activity.html`](docs/agent-activity.html) (interactivo y animado; abrir en el navegador).
+**Flujo del agente:** diagrama de actividades del bucle ReAct, interactivo y animado: [ver en vivo](https://eduardoalvarado.github.io/lead-agent-tool/agent-activity.html) (fuente: [`docs/agent-activity.html`](docs/agent-activity.html)).
 
 ### 3.2 Producción en AWS (propuesta)
 
 ![Arquitectura de producción en AWS](docs/architecture.png)
 
-Versión interactiva y animada, con los dos modos (PoC / producción) y el flujo paso a paso: [`docs/architecture.html`](docs/architecture.html) (abrir en el navegador). Fuentes Mermaid: [`docs/diagrams/`](docs/diagrams/).
+Versión interactiva y animada, con los dos modos (PoC / producción) y el flujo paso a paso: **[ver en vivo](https://eduardoalvarado.github.io/lead-agent-tool/architecture.html)** (fuente: [`docs/architecture.html`](docs/architecture.html); todos los diagramas en [GitHub Pages](https://eduardoalvarado.github.io/lead-agent-tool/)). Fuentes Mermaid: [`docs/diagrams/`](docs/diagrams/).
 
 ```
 Cliente ─► API Gateway (REST, API key + usage plan) ─► λ api (NestJS)
